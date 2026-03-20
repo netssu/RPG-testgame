@@ -20,8 +20,7 @@ local EVENT_DURATION_SECONDS = 5 * 60 -- primeiros 5 minutos de cada hora cheia
 local WEATHER_MULTIPLIER_ACTIVE = 2
 local WEATHER_MULTIPLIER_IDLE = 1
 
-local WIND_PUSH_FORCE = 12
-local PUSH_INTERVAL = 0.2
+local WIND_JUMP_IMPULSE = 38
 
 local CLOUDS_NAME = "GlobalWeatherClouds"
 
@@ -34,8 +33,7 @@ local activeState = {
 	endsAt = 0,
 }
 
-local pushAccumulator = 0
-local windContributionByPlayer: {[number]: Vector3} = {}
+local jumpImpulseConsumedByPlayer: {[number]: boolean} = {}
 
 ------------------//FUNCTIONS (Random determinístico)
 local function hash_int(value: number): number
@@ -123,12 +121,7 @@ end
 
 ------------------//FUNCTIONS (Gameplay)
 local function push_players(dt: number)
-	pushAccumulator += dt
-	if pushAccumulator < PUSH_INTERVAL then
-		return
-	end
-	pushAccumulator = 0
-
+	local _ = dt
 	for _, player in ipairs(Players:GetPlayers()) do
 		local userId = player.UserId
 		local character = player.Character
@@ -136,30 +129,37 @@ local function push_players(dt: number)
 			local hrp = character:FindFirstChild("HumanoidRootPart")
 			local humanoid = character:FindFirstChildOfClass("Humanoid")
 			if hrp and hrp:IsA("BasePart") and humanoid and humanoid.Health > 0 then
-				local currentVelocity = hrp.AssemblyLinearVelocity
-				local previousWind = windContributionByPlayer[userId] or Vector3.zero
+				local currentState = humanoid:GetState()
+				local isGrounded = currentState == Enum.HumanoidStateType.Running
+					or currentState == Enum.HumanoidStateType.Landed
+					or currentState == Enum.HumanoidStateType.RunningNoPhysics
 
-				local cleanHorizontal = Vector3.new(
-					currentVelocity.X - previousWind.X,
-					0,
-					currentVelocity.Z - previousWind.Z
-				)
+				if isGrounded then
+					jumpImpulseConsumedByPlayer[userId] = false
+				end
 
-				local newWind = activeState.active and (activeState.direction * WIND_PUSH_FORCE) or Vector3.zero
-				local finalHorizontal = cleanHorizontal + newWind
+				local isAirborne = currentState == Enum.HumanoidStateType.Jumping
+					or currentState == Enum.HumanoidStateType.Freefall
+					or currentState == Enum.HumanoidStateType.FallingDown
 
-				hrp.AssemblyLinearVelocity = Vector3.new(
-					finalHorizontal.X,
-					currentVelocity.Y,
-					finalHorizontal.Z
-				)
+				if activeState.active and isAirborne and not jumpImpulseConsumedByPlayer[userId] then
+					local windHorizontal = Vector3.new(activeState.direction.X, 0, activeState.direction.Z)
+					if windHorizontal.Magnitude > 0.001 then
+						windHorizontal = windHorizontal.Unit
+					else
+						windHorizontal = Vector3.new(0, 0, -1)
+					end
 
-				windContributionByPlayer[userId] = newWind
-			else
-				windContributionByPlayer[userId] = Vector3.zero
+					local currentVelocity = hrp.AssemblyLinearVelocity
+					local horizontalVelocity = Vector3.new(currentVelocity.X, 0, currentVelocity.Z)
+					local boostedHorizontal = horizontalVelocity + (windHorizontal * WIND_JUMP_IMPULSE)
+
+					hrp.AssemblyLinearVelocity = Vector3.new(boostedHorizontal.X, currentVelocity.Y, boostedHorizontal.Z)
+					jumpImpulseConsumedByPlayer[userId] = true
+				end
 			end
 		else
-			windContributionByPlayer[userId] = Vector3.zero
+			jumpImpulseConsumedByPlayer[userId] = false
 		end
 	end
 end
@@ -202,7 +202,7 @@ Players.PlayerAdded:Connect(function(player)
 end)
 
 Players.PlayerRemoving:Connect(function(player)
-	windContributionByPlayer[player.UserId] = nil
+	jumpImpulseConsumedByPlayer[player.UserId] = nil
 	MultiplierUtility.clear(player)
 end)
 
