@@ -4,6 +4,7 @@ local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
 
 ------------------//CONSTANTS
 local remotesFolder = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Remotes")
@@ -16,7 +17,7 @@ local WIND_AIR_ACCELERATION = 200 -- studs/s² horizontais no ar
 local WIND_MAX_HORIZONTAL_SPEED = 85
 local RAIN_EFFECT_OFFSET = CFrame.new(0, 10, 0)
 local RAIN_EFFECT_NAME = "GlobalWeatherRain"
-local RAIN_MOTOR_NAME = "GlobalWeatherRainMotor"
+local WIND_ARROW_GUI_NAME = "WindArrowBillboard"
 
 ------------------//STATE
 local activeAtmosphereTween: Tween? = nil
@@ -38,40 +39,46 @@ local lightingDefaults = {
 
 ------------------//UI
 local localPlayer = Players.LocalPlayer
-local playerGui = localPlayer:WaitForChild("PlayerGui")
-local uiRoot = playerGui:WaitForChild("UI")
 
-local function get_or_create_wind_indicator(): TextLabel
-	local existing = uiRoot:FindFirstChild("WindDirectionIndicator")
-	if existing and existing:IsA("TextLabel") then
-		return existing
+local function get_or_create_wind_indicator(): TextLabel?
+	local character = localPlayer.Character
+	if not character then
+		return nil
 	end
 
-	local label = Instance.new("TextLabel")
-	label.Name = "WindDirectionIndicator"
-	label.AnchorPoint = Vector2.new(0.5, 0)
-	label.Position = UDim2.fromScale(0.5, 0.12)
-	label.Size = UDim2.fromOffset(180, 40)
-	label.BackgroundTransparency = 0.35
-	label.BackgroundColor3 = Color3.fromRGB(20, 25, 34)
-	label.TextColor3 = Color3.fromRGB(235, 245, 255)
-	label.Font = Enum.Font.GothamBold
-	label.TextSize = 18
-	label.Text = "Vento  ↑"
-	label.TextTransparency = 1
-	label.Visible = true
-	label.Parent = uiRoot
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	if not rootPart or not rootPart:IsA("BasePart") then
+		return nil
+	end
 
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 10)
-	corner.Parent = label
+	local existingGui = rootPart:FindFirstChild(WIND_ARROW_GUI_NAME)
+	if existingGui and existingGui:IsA("BillboardGui") then
+		local existingArrow = existingGui:FindFirstChild("Arrow")
+		if existingArrow and existingArrow:IsA("TextLabel") then
+			return existingArrow
+		end
+	end
 
-	local stroke = Instance.new("UIStroke")
-	stroke.Transparency = 0.45
-	stroke.Color = Color3.fromRGB(160, 195, 240)
-	stroke.Parent = label
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = WIND_ARROW_GUI_NAME
+	billboard.Adornee = rootPart
+	billboard.Size = UDim2.fromOffset(54, 54)
+	billboard.StudsOffset = Vector3.new(0, 4.5, 0)
+	billboard.AlwaysOnTop = true
+	billboard.Parent = rootPart
 
-	return label
+	local arrow = Instance.new("TextLabel")
+	arrow.Name = "Arrow"
+	arrow.Size = UDim2.fromScale(1, 1)
+	arrow.BackgroundTransparency = 1
+	arrow.Font = Enum.Font.GothamBlack
+	arrow.TextScaled = true
+	arrow.TextColor3 = Color3.fromRGB(220, 240, 255)
+	arrow.TextStrokeTransparency = 0.35
+	arrow.Text = "➡️"
+	arrow.Parent = billboard
+
+	return arrow
 end
 
 ------------------//FUNCTIONS
@@ -152,11 +159,6 @@ local function apply_cloudy_state(isActive: boolean)
 end
 
 local function get_or_create_rain_effect(character: Model): BasePart?
-	local rootPart = character:FindFirstChild("HumanoidRootPart")
-	if not rootPart or not rootPart:IsA("BasePart") then
-		return nil
-	end
-
 	local existing = character:FindFirstChild(RAIN_EFFECT_NAME)
 	if existing and existing:IsA("BasePart") then
 		return existing
@@ -179,20 +181,16 @@ local function get_or_create_rain_effect(character: Model): BasePart?
 
 	local rainPart = rainTemplate:Clone()
 	rainPart.Name = RAIN_EFFECT_NAME
-	rainPart.Anchored = false
+	rainPart.Anchored = true
 	rainPart.CanCollide = false
 	rainPart.CanQuery = false
 	rainPart.CanTouch = false
 	rainPart.Massless = true
-	rainPart.CFrame = rootPart.CFrame * RAIN_EFFECT_OFFSET
+	local currentCamera = Workspace.CurrentCamera
+	if currentCamera then
+		rainPart.CFrame = currentCamera.CFrame * RAIN_EFFECT_OFFSET
+	end
 	rainPart.Parent = character
-
-	local motor = Instance.new("Motor6D")
-	motor.Name = RAIN_MOTOR_NAME
-	motor.Part0 = rootPart
-	motor.Part1 = rainPart
-	motor.C0 = RAIN_EFFECT_OFFSET
-	motor.Parent = rootPart
 
 	return rainPart
 end
@@ -223,6 +221,25 @@ local function set_rain_active(isActive: boolean)
 	end
 end
 
+local function update_rain_follow_camera()
+	local character = localPlayer.Character
+	if not character then
+		return
+	end
+
+	local rainPart = character:FindFirstChild(RAIN_EFFECT_NAME)
+	if not rainPart or not rainPart:IsA("BasePart") then
+		return
+	end
+
+	local camera = Workspace.CurrentCamera
+	if not camera then
+		return
+	end
+
+	rainPart.CFrame = camera.CFrame * RAIN_EFFECT_OFFSET
+end
+
 local function direction_to_arrow(direction: Vector3): string
 	if direction.Magnitude < 0.001 then
 		return "↑"
@@ -236,6 +253,9 @@ end
 
 local function apply_wind_indicator(state: {[string]: any})
 	local indicator = get_or_create_wind_indicator()
+	if not indicator then
+		return
+	end
 	local active = state.active == true
 	local direction = state.direction
 
@@ -243,7 +263,7 @@ local function apply_wind_indicator(state: {[string]: any})
 		direction = Vector3.new(0, 0, -1)
 	end
 
-	indicator.Text = string.format("Vento  %s", direction_to_arrow(direction))
+	indicator.Text = direction_to_arrow(direction)
 
 	if indicatorTween then
 		indicatorTween:Cancel()
@@ -252,7 +272,6 @@ local function apply_wind_indicator(state: {[string]: any})
 
 	indicatorTween = TweenService:Create(indicator, INDICATOR_TWEEN, {
 		TextTransparency = active and 0 or 1,
-		BackgroundTransparency = active and 0.35 or 1,
 	})
 	indicatorTween:Play()
 end
@@ -316,6 +335,7 @@ weatherRemote.OnClientEvent:Connect(function(state)
 end)
 
 RunService.RenderStepped:Connect(apply_air_wind)
+RunService.RenderStepped:Connect(update_rain_follow_camera)
 
 localPlayer.CharacterAdded:Connect(function()
 	task.wait(0.2)
