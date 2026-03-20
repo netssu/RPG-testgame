@@ -3,6 +3,8 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MultiplierUtility = require(ReplicatedStorage.Modules.Utility.MultiplierUtility)
 local WeatherControl = require(script.Parent:WaitForChild("WeatherControl"))
+local DataUtility = require(ReplicatedStorage.Modules.Utility.DataUtility)
+local WorldConfig = require(ReplicatedStorage.Modules.Datas.WorldConfig)
 
 ------------------//CONSTANTS
 local remotesFolder = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Remotes")
@@ -20,11 +22,13 @@ local WEATHER_MULTIPLIER_ACTIVE = 2
 local WEATHER_MULTIPLIER_IDLE = 1
 
 local CLOUDS_NAME = "GlobalWeatherClouds"
+local DEFAULT_WIND_DIRECTION = Vector3.new(1, 0, 0)
+local portalsFolder = workspace:WaitForChild("Portals")
 
 ------------------//STATE
 local activeState = {
 	active = false,
-	direction = Vector3.new(1, 0, 0),
+	direction = DEFAULT_WIND_DIRECTION,
 	hourSlot = -1,
 	startedAt = 0,
 	endsAt = 0,
@@ -44,7 +48,7 @@ local function get_hour_state(hourSlot: number, now: number)
 	local angle = (angleSeed % 360) * math.pi / 180
 	local direction = Vector3.new(math.cos(angle), 0, math.sin(angle))
 	if direction.Magnitude < 0.001 then
-		direction = Vector3.new(1, 0, 0)
+		direction = DEFAULT_WIND_DIRECTION
 	else
 		direction = direction.Unit
 	end
@@ -60,6 +64,38 @@ local function get_hour_state(hourSlot: number, now: number)
 		startedAt = startedAt,
 		endsAt = endsAt,
 	}
+end
+
+local function snap_to_nearest_right_angle(direction: Vector3): Vector3
+	local horizontal = Vector3.new(direction.X, 0, direction.Z)
+	if horizontal.Magnitude < 0.001 then
+		return DEFAULT_WIND_DIRECTION
+	end
+
+	if math.abs(horizontal.X) >= math.abs(horizontal.Z) then
+		return Vector3.new(horizontal.X >= 0 and 1 or -1, 0, 0)
+	end
+
+	return Vector3.new(0, 0, horizontal.Z >= 0 and 1 or -1)
+end
+
+local function get_player_wind_direction(player: Player): Vector3
+	local currentWorldId = DataUtility.server.get(player, "CurrentWorld") or 1
+	local currentWorldData = WorldConfig.GetWorld(currentWorldId)
+	local nextPortal = portalsFolder:FindFirstChild(tostring(currentWorldId + 1))
+
+	if not currentWorldData or not currentWorldData.entryCFrame or not nextPortal or not nextPortal:IsA("BasePart") then
+		return activeState.direction
+	end
+
+	local spawnPosition = currentWorldData.entryCFrame.Position
+	local directionToPortal = nextPortal.Position - spawnPosition
+	if directionToPortal.Magnitude < 0.001 then
+		return activeState.direction
+	end
+
+	local snapped = snap_to_nearest_right_angle(directionToPortal.Unit)
+	return -snapped
 end
 
 ------------------//FUNCTIONS (Visual)
@@ -116,9 +152,15 @@ end
 
 local function broadcast_state(targetPlayer: Player?)
 	if targetPlayer then
-		weatherRemote:FireClient(targetPlayer, activeState)
+		local personalizedState = table.clone(activeState)
+		personalizedState.direction = get_player_wind_direction(targetPlayer)
+		weatherRemote:FireClient(targetPlayer, personalizedState)
 	else
-		weatherRemote:FireAllClients(activeState)
+		for _, player in ipairs(Players:GetPlayers()) do
+			local personalizedState = table.clone(activeState)
+			personalizedState.direction = get_player_wind_direction(player)
+			weatherRemote:FireClient(player, personalizedState)
+		end
 	end
 end
 

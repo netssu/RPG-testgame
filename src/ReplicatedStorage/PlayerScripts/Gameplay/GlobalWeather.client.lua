@@ -12,7 +12,7 @@ local weatherRemote = remotesFolder:WaitForChild("GlobalWeatherEvent")
 local WEATHER_ATMOSPHERE_NAME = "GlobalWeatherAtmosphere"
 local LIGHTING_TWEEN = TweenInfo.new(1.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local INDICATOR_TWEEN = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local WIND_AIR_ACCELERATION = 22 -- studs/s² horizontais no ar
+local WIND_AIR_ACCELERATION = 200 -- studs/s² horizontais no ar
 local WIND_MAX_HORIZONTAL_SPEED = 85
 
 ------------------//STATE
