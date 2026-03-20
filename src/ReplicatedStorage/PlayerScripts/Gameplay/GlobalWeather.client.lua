@@ -17,7 +17,7 @@ local WIND_AIR_ACCELERATION = 200 -- studs/s² horizontais no ar
 local WIND_MAX_HORIZONTAL_SPEED = 85
 local RAIN_EFFECT_OFFSET = CFrame.new(0, 10, 0)
 local RAIN_EFFECT_NAME = "GlobalWeatherRain"
-local WIND_ARROW_GUI_NAME = "WindArrowBillboard"
+local WIND_ARROW_GUI_NAME = "WindArrowGui"
 
 ------------------//STATE
 local activeAtmosphereTween: Tween? = nil
@@ -41,42 +41,39 @@ local lightingDefaults = {
 local localPlayer = Players.LocalPlayer
 
 local function get_or_create_wind_indicator(): TextLabel?
-	local character = localPlayer.Character
-	if not character then
+	local playerGui = localPlayer:FindFirstChildOfClass("PlayerGui")
+	if not playerGui then
 		return nil
 	end
 
-	local rootPart = character:FindFirstChild("HumanoidRootPart")
-	if not rootPart or not rootPart:IsA("BasePart") then
-		return nil
-	end
-
-	local existingGui = rootPart:FindFirstChild(WIND_ARROW_GUI_NAME)
-	if existingGui and existingGui:IsA("BillboardGui") then
+	local existingGui = playerGui:FindFirstChild(WIND_ARROW_GUI_NAME)
+	if existingGui and existingGui:IsA("ScreenGui") then
 		local existingArrow = existingGui:FindFirstChild("Arrow")
 		if existingArrow and existingArrow:IsA("TextLabel") then
 			return existingArrow
 		end
 	end
 
-	local billboard = Instance.new("BillboardGui")
-	billboard.Name = WIND_ARROW_GUI_NAME
-	billboard.Adornee = rootPart
-	billboard.Size = UDim2.fromOffset(54, 54)
-	billboard.StudsOffset = Vector3.new(0, 4.5, 0)
-	billboard.AlwaysOnTop = true
-	billboard.Parent = rootPart
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = WIND_ARROW_GUI_NAME
+	screenGui.ResetOnSpawn = false
+	screenGui.IgnoreGuiInset = true
+	screenGui.DisplayOrder = 20
+	screenGui.Parent = playerGui
 
 	local arrow = Instance.new("TextLabel")
 	arrow.Name = "Arrow"
-	arrow.Size = UDim2.fromScale(1, 1)
+	arrow.AnchorPoint = Vector2.new(0.5, 0)
+	arrow.Position = UDim2.fromScale(0.5, 0.06)
+	arrow.Size = UDim2.fromOffset(64, 64)
 	arrow.BackgroundTransparency = 1
 	arrow.Font = Enum.Font.GothamBlack
 	arrow.TextScaled = true
 	arrow.TextColor3 = Color3.fromRGB(220, 240, 255)
 	arrow.TextStrokeTransparency = 0.35
-	arrow.Text = "➡️"
-	arrow.Parent = billboard
+	arrow.Text = "➤"
+	arrow.TextTransparency = 1
+	arrow.Parent = screenGui
 
 	return arrow
 end
@@ -237,18 +234,29 @@ local function update_rain_follow_camera()
 		return
 	end
 
-	rainPart.CFrame = camera.CFrame * RAIN_EFFECT_OFFSET
-end
-
-local function direction_to_arrow(direction: Vector3): string
-	if direction.Magnitude < 0.001 then
-		return "↑"
+	local direction = currentWeatherState.direction
+	if typeof(direction) ~= "Vector3" then
+		direction = Vector3.new(0, 0, -1)
 	end
 
-	local angle = math.atan2(direction.X, -direction.Z)
-	local octant = math.floor(((angle / (2 * math.pi)) * 8) + 0.5) % 8
-	local arrows = {"↑", "↗", "→", "↘", "↓", "↙", "←", "↖"}
-	return arrows[octant + 1]
+	local horizontalWind = Vector3.new(direction.X, 0, direction.Z)
+	if horizontalWind.Magnitude < 0.001 then
+		horizontalWind = Vector3.new(0, 0, -1)
+	else
+		horizontalWind = horizontalWind.Unit
+	end
+
+	local rainPosition = (camera.CFrame * RAIN_EFFECT_OFFSET).Position
+	rainPart.CFrame = CFrame.lookAt(rainPosition, rainPosition + horizontalWind, Vector3.yAxis)
+end
+
+local function direction_to_rotation(direction: Vector3): number
+	local horizontal = Vector3.new(direction.X, 0, direction.Z)
+	if horizontal.Magnitude < 0.001 then
+		return 0
+	end
+
+	return math.deg(math.atan2(horizontal.Z, horizontal.X))
 end
 
 local function apply_wind_indicator(state: {[string]: any})
@@ -263,7 +271,7 @@ local function apply_wind_indicator(state: {[string]: any})
 		direction = Vector3.new(0, 0, -1)
 	end
 
-	indicator.Text = direction_to_arrow(direction)
+	indicator.Rotation = direction_to_rotation(direction)
 
 	if indicatorTween then
 		indicatorTween:Cancel()
@@ -343,5 +351,3 @@ localPlayer.CharacterAdded:Connect(function()
 		set_rain_active(true)
 	end
 end)
-
-RunService.RenderStepped:Connect(apply_air_wind)
