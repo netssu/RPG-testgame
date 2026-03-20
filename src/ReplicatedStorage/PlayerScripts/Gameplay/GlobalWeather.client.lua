@@ -84,7 +84,9 @@ local function get_or_create_wind_indicator(): (BasePart?, TextLabel?)
 
 	local arrow = Instance.new("TextLabel")
 	arrow.Name = "Arrow"
-	arrow.Size = UDim2.fromScale(1, 1)
+	arrow.AnchorPoint = Vector2.new(0.5, 0)
+	arrow.Position = UDim2.fromScale(0.5, 0.06)
+	arrow.Size = UDim2.fromOffset(64, 64)
 	arrow.BackgroundTransparency = 1
 	arrow.Font = Enum.Font.GothamBlack
 	arrow.TextScaled = true
