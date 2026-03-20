@@ -1,13 +1,10 @@
+------------------//SERVICES
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 
-local DATA_UTILITY = require(ReplicatedStorage.Modules.Utility.DataUtility)
-local DATA_PETS = require(ReplicatedStorage.Modules.Datas.PetsData)
-local MultiplierUtility = require(ReplicatedStorage.Modules.Utility.MultiplierUtility)
-
--- CONFIG
+------------------//CONSTANTS
 local PET_DISTANCE = 6
 local PET_SIDE_OFFSET = 4
 local FLY_HEIGHT = 3
@@ -21,13 +18,15 @@ local ALIGN_RESPONSIVENESS = 35
 local ROTATION_RESPONSIVENESS = 100
 local TELEPORT_DISTANCE = 60
 
--- STORAGE
+------------------//VARIABLES
+local DATA_UTILITY = require(ReplicatedStorage.Modules.Utility.DataUtility)
+local DATA_PETS = require(ReplicatedStorage.Modules.Datas.PetsData)
+local SKILLS_DATA = require(ReplicatedStorage.Modules.Datas.PetsSkillsData)
+
 local activePets = {}
+local activeCoinDrops = {}
 
----------------------------------------------------
--- HOLDER
----------------------------------------------------
-
+------------------//FUNCTIONS
 local function createHolder(character)
 	local hrp = character:WaitForChild("HumanoidRootPart")
 
@@ -49,10 +48,6 @@ local function createHolder(character)
 
 	return holder
 end
-
----------------------------------------------------
--- PET CREATION
----------------------------------------------------
 
 local function createPet(player, character, petName, slotIndex)
 	local hrp = character:WaitForChild("HumanoidRootPart")
@@ -106,27 +101,56 @@ local function createPet(player, character, petName, slotIndex)
 	pet:SetNetworkOwner(player)
 end
 
----------------------------------------------------
--- UPDATE MULTIPLIER
----------------------------------------------------
-
 local function updateMultiplier(player)
 	local equipped = DATA_UTILITY.server.get(player, "EquippedPets") or {}
 	local total = 1
+	
+	player:SetAttribute("PetJumpBoost", 0)
+	player:SetAttribute("SecondChanceCD", 0)
+	player:SetAttribute("EquippedSkill", "")
+	
+	activeCoinDrops[player] = nil
+	local totalJumpBoost = 0
+	local bestActiveSkill = ""
+	local bestPassiveSkill = ""
 
 	for _, petName in pairs(equipped) do
 		local petData = DATA_PETS.GetPetData(petName)
-		if petData and petData.Multiplier then
-			total += petData.Multiplier
+		if petData then
+			if petData.Multiplier then
+				total += petData.Multiplier
+			end
+			
+			if petData.Skill then
+				local skillInfo = SKILLS_DATA.GetSkillData(petData.Skill)
+				if skillInfo then
+					if skillInfo.Type == "Passive" then
+						bestPassiveSkill = petData.Skill
+						if skillInfo.Name:match("Pulo") then
+							totalJumpBoost += (skillInfo.Value or 0)
+						elseif skillInfo.Name:match("Minerador") or skillInfo.Name:match("Tesouro") then
+							if not activeCoinDrops[player] then activeCoinDrops[player] = {} end
+							table.insert(activeCoinDrops[player], {Amount = skillInfo.Value, Cooldown = skillInfo.Cooldown, LastDrop = os.clock()})
+						elseif skillInfo.Name:match("Salva Vidas") then
+							player:SetAttribute("SecondChanceCD", skillInfo.Cooldown)
+						end
+					elseif skillInfo.Type == "Active" then
+						bestActiveSkill = petData.Skill
+					end
+				end
+			end
 		end
 	end
 
-	MultiplierUtility.set_base(player, total)
+	player:SetAttribute("Multiplier", total)
+	player:SetAttribute("PetJumpBoost", totalJumpBoost)
+	
+	if bestActiveSkill ~= "" then
+		player:SetAttribute("EquippedSkill", bestActiveSkill)
+	else
+		player:SetAttribute("EquippedSkill", bestPassiveSkill)
+	end
 end
-
----------------------------------------------------
--- SPAWN PETS
----------------------------------------------------
 
 local function spawnPets(player)
 	if activePets[player] then
@@ -149,11 +173,24 @@ local function spawnPets(player)
 	updateMultiplier(player)
 end
 
-
+------------------//INIT
 local rayParams = RaycastParams.new()
 rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
 RunService.Heartbeat:Connect(function(dt)
+	local now = os.clock()
+	
+	for player, drops in pairs(activeCoinDrops) do
+		if not player.Parent then continue end
+		for _, drop in pairs(drops) do
+			if now - drop.LastDrop >= drop.Cooldown then
+				drop.LastDrop = now
+				local currentCoins = DATA_UTILITY.server.get(player, "Coins") or 0
+				DATA_UTILITY.server.set(player, "Coins", currentCoins + drop.Amount)
+			end
+		end
+	end
+
 	for player, pets in pairs(activePets) do
 		for slotIndex, data in pairs(pets) do
 			local pet = data.Pet
@@ -176,7 +213,6 @@ RunService.Heartbeat:Connect(function(dt)
 			end
 
 			local offsetZ = baseOffsetZ + walkForward
-
 
 			local targetY
 
@@ -228,10 +264,6 @@ RunService.Heartbeat:Connect(function(dt)
 		end
 	end
 end)
-
----------------------------------------------------
--- PLAYER CONNECTIONS
----------------------------------------------------
 
 Players.PlayerAdded:Connect(function(player)
 	player.CharacterAdded:Connect(function()
