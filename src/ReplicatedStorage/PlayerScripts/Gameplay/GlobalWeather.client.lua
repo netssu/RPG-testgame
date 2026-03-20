@@ -9,6 +9,7 @@ local Workspace = game:GetService("Workspace")
 ------------------//CONSTANTS
 local remotesFolder = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Remotes")
 local weatherRemote = remotesFolder:WaitForChild("GlobalWeatherEvent")
+local NotificationUtility = require(ReplicatedStorage.Modules.Utility.NotificationUtility)
 
 local WEATHER_ATMOSPHERE_NAME = "GlobalWeatherAtmosphere"
 local LIGHTING_TWEEN = TweenInfo.new(1.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -16,7 +17,6 @@ local WIND_AIR_ACCELERATION = 200 -- studs/s² horizontais no ar
 local WIND_MAX_HORIZONTAL_SPEED = 85
 local RAIN_EFFECT_OFFSET = CFrame.new(0, 10, 0)
 local RAIN_EFFECT_NAME = "GlobalWeatherRain"
-local WEATHER_NOTICE_GUI_NAME = "WeatherStartNoticeGui"
 
 ------------------//STATE
 local activeAtmosphereTween: Tween? = nil
@@ -51,98 +51,19 @@ local function direction_to_side(direction: Vector3): string
 	return horizontal.Z >= 0 and "Z+" or "Z-"
 end
 
-local function get_or_create_weather_notice_gui(): ScreenGui?
-	local playerGui = localPlayer:FindFirstChildOfClass("PlayerGui")
-	if not playerGui then
-		return nil
-	end
-
-	local existingGui = playerGui:FindFirstChild(WEATHER_NOTICE_GUI_NAME)
-	if existingGui and existingGui:IsA("ScreenGui") then
-		return existingGui
-	end
-
-	local screenGui = Instance.new("ScreenGui")
-	screenGui.Name = WEATHER_NOTICE_GUI_NAME
-	screenGui.ResetOnSpawn = false
-	screenGui.IgnoreGuiInset = true
-	screenGui.Enabled = false
-	screenGui.Parent = playerGui
-
-	local dim = Instance.new("Frame")
-	dim.Name = "Dim"
-	dim.Size = UDim2.fromScale(1, 1)
-	dim.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	dim.BackgroundTransparency = 0.35
-	dim.Parent = screenGui
-
-	local panel = Instance.new("Frame")
-	panel.Name = "Panel"
-	panel.AnchorPoint = Vector2.new(0.5, 0.5)
-	panel.Position = UDim2.fromScale(0.5, 0.5)
-	panel.Size = UDim2.fromOffset(560, 220)
-	panel.BackgroundColor3 = Color3.fromRGB(26, 30, 42)
-	panel.Parent = dim
-
-	local title = Instance.new("TextLabel")
-	title.Name = "Title"
-	title.Size = UDim2.new(1, -30, 0, 44)
-	title.Position = UDim2.fromOffset(15, 12)
-	title.BackgroundTransparency = 1
-	title.Font = Enum.Font.GothamBold
-	title.TextScaled = true
-	title.TextColor3 = Color3.fromRGB(225, 238, 255)
-	title.Text = "Começou a chover!"
-	title.Parent = panel
-
-	local message = Instance.new("TextLabel")
-	message.Name = "Message"
-	message.Size = UDim2.new(1, -30, 0, 92)
-	message.Position = UDim2.fromOffset(15, 62)
-	message.BackgroundTransparency = 1
-	message.Font = Enum.Font.Gotham
-	message.TextWrapped = true
-	message.TextScaled = true
-	message.TextColor3 = Color3.fromRGB(210, 224, 246)
-	message.Text = ""
-	message.Parent = panel
-
-	local confirm = Instance.new("TextButton")
-	confirm.Name = "ConfirmButton"
-	confirm.AnchorPoint = Vector2.new(0.5, 1)
-	confirm.Position = UDim2.new(0.5, 0, 1, -16)
-	confirm.Size = UDim2.fromOffset(220, 44)
-	confirm.BackgroundColor3 = Color3.fromRGB(58, 126, 222)
-	confirm.Font = Enum.Font.GothamBold
-	confirm.TextScaled = true
-	confirm.TextColor3 = Color3.fromRGB(255, 255, 255)
-	confirm.Text = "Entendi"
-	confirm.Parent = panel
-
-	confirm.MouseButton1Click:Connect(function()
-		screenGui.Enabled = false
-	end)
-
-	return screenGui
-end
-
 local function show_weather_start_notice(direction: Vector3)
-	local noticeGui = get_or_create_weather_notice_gui()
-	if not noticeGui then
-		return
-	end
-
 	local side = direction_to_side(direction)
-	local dim = noticeGui:FindFirstChild("Dim")
-	local panel = dim and dim:FindFirstChild("Panel")
-	local messageLabel = panel and panel:FindFirstChild("Message")
-	if messageLabel and messageLabel:IsA("TextLabel") then
-		messageLabel.Text = "Começou a chover! O vento está empurrando você para o lado "
+	NotificationUtility:Show({
+		type = "action",
+		title = "CLIMA GLOBAL",
+		message = "Começou a chover! O vento está empurrando você para o lado "
 			.. side
-			.. ". Confirme que entendeu para continuar."
-	end
-
-	noticeGui.Enabled = true
+			.. ". Confirme que entendeu para fechar este aviso.",
+		buttonText = "Entendi",
+		callback = function() end,
+		duration = 99999,
+		priority = 999,
+	})
 end
 
 ------------------//FUNCTIONS
