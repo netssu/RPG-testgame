@@ -20,9 +20,7 @@ local EVENT_DURATION_SECONDS = 5 * 60 -- primeiros 5 minutos de cada hora cheia
 local WEATHER_MULTIPLIER_ACTIVE = 2
 local WEATHER_MULTIPLIER_IDLE = 1
 
-local WIND_ALIGN_OFFSET = 14
-local WIND_ALIGN_RESPONSIVENESS = 28
-local WIND_ALIGN_MAX_FORCE = 45000
+local WIND_JUMP_IMPULSE = 38
 
 local CLOUDS_NAME = "GlobalWeatherClouds"
 
@@ -35,37 +33,7 @@ local activeState = {
 	endsAt = 0,
 }
 
-local function get_or_create_wind_align(character: Model): (AlignPosition?, Attachment?)
-	local hrp = character:FindFirstChild("HumanoidRootPart")
-	if not hrp or not hrp:IsA("BasePart") then
-		return nil, nil
-	end
-
-	local attach = hrp:FindFirstChild("WindPushAttachment")
-	if not attach then
-		attach = Instance.new("Attachment")
-		attach.Name = "WindPushAttachment"
-		attach.Parent = hrp
-	end
-
-	local align = hrp:FindFirstChild("WindAlignPosition")
-	if not align then
-		align = Instance.new("AlignPosition")
-		align.Name = "WindAlignPosition"
-		align.Mode = Enum.PositionAlignmentMode.OneAttachment
-		align.ApplyAtCenterOfMass = true
-		align.RigidityEnabled = false
-		align.ReactionForceEnabled = false
-		align.Responsiveness = WIND_ALIGN_RESPONSIVENESS
-		align.MaxForce = WIND_ALIGN_MAX_FORCE
-		align.MaxVelocity = 80
-		align.Attachment0 = attach
-		align.Enabled = false
-		align.Parent = hrp
-	end
-
-	return align :: AlignPosition, attach :: Attachment
-end
+local jumpImpulseConsumedByPlayer: {[number]: boolean} = {}
 
 ------------------//FUNCTIONS (Random determinístico)
 local function hash_int(value: number): number
@@ -160,17 +128,20 @@ local function push_players(dt: number)
 			local hrp = character:FindFirstChild("HumanoidRootPart")
 			local humanoid = character:FindFirstChildOfClass("Humanoid")
 			if hrp and hrp:IsA("BasePart") and humanoid and humanoid.Health > 0 then
-				local align = get_or_create_wind_align(character)
-				if not align then
-					continue
+				local currentState = humanoid:GetState()
+				local isGrounded = currentState == Enum.HumanoidStateType.Running
+					or currentState == Enum.HumanoidStateType.Landed
+					or currentState == Enum.HumanoidStateType.RunningNoPhysics
+
+				if isGrounded then
+					jumpImpulseConsumedByPlayer[userId] = false
 				end
 
-				local currentState = humanoid:GetState()
 				local isAirborne = currentState == Enum.HumanoidStateType.Jumping
 					or currentState == Enum.HumanoidStateType.Freefall
 					or currentState == Enum.HumanoidStateType.FallingDown
 
-				if activeState.active and isAirborne then
+				if activeState.active and isAirborne and not jumpImpulseConsumedByPlayer[userId] then
 					local windHorizontal = Vector3.new(activeState.direction.X, 0, activeState.direction.Z)
 					if windHorizontal.Magnitude > 0.001 then
 						windHorizontal = windHorizontal.Unit
@@ -178,13 +149,16 @@ local function push_players(dt: number)
 						windHorizontal = Vector3.new(0, 0, -1)
 					end
 
-					local targetPosition = hrp.Position + (windHorizontal * WIND_ALIGN_OFFSET)
-					align.Position = Vector3.new(targetPosition.X, hrp.Position.Y, targetPosition.Z)
-					align.Enabled = true
-				else
-					align.Enabled = false
+					local currentVelocity = hrp.AssemblyLinearVelocity
+					local horizontalVelocity = Vector3.new(currentVelocity.X, 0, currentVelocity.Z)
+					local boostedHorizontal = horizontalVelocity + (windHorizontal * WIND_JUMP_IMPULSE)
+
+					hrp.AssemblyLinearVelocity = Vector3.new(boostedHorizontal.X, currentVelocity.Y, boostedHorizontal.Z)
+					jumpImpulseConsumedByPlayer[userId] = true
 				end
 			end
+		else
+			jumpImpulseConsumedByPlayer[userId] = false
 		end
 	end
 end
@@ -227,6 +201,7 @@ Players.PlayerAdded:Connect(function(player)
 end)
 
 Players.PlayerRemoving:Connect(function(player)
+	jumpImpulseConsumedByPlayer[player.UserId] = nil
 	MultiplierUtility.clear(player)
 end)
 
