@@ -20,7 +20,7 @@ local EVENT_DURATION_SECONDS = 5 * 60 -- primeiros 5 minutos de cada hora cheia
 local WEATHER_MULTIPLIER_ACTIVE = 2
 local WEATHER_MULTIPLIER_IDLE = 1
 
-local WIND_PUSH_FORCE = 18
+local WIND_PUSH_FORCE = 60
 local PUSH_INTERVAL = 0.2
 
 local CLOUDS_NAME = "GlobalWeatherClouds"
@@ -39,9 +39,9 @@ local pushAccumulator = 0
 ------------------//FUNCTIONS (Random determinístico)
 local function hash_int(value: number): number
 	local x = math.floor(value)
-	x = ((x ~ (x << 13)) & 0x7fffffff)
-	x = ((x ~ (x >> 17)) & 0x7fffffff)
-	x = ((x ~ (x << 5)) & 0x7fffffff)
+	x = bit32.band(bit32.bxor(x, bit32.lshift(x, 13)), 0x7fffffff)
+	x = bit32.band(bit32.bxor(x, bit32.rshift(x, 17)), 0x7fffffff)
+	x = bit32.band(bit32.bxor(x, bit32.lshift(x, 5)), 0x7fffffff)
 	return x
 end
 
