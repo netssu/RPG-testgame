@@ -41,12 +41,12 @@ local localPlayer = Players.LocalPlayer
 local function get_or_create_wind_pointer(): BasePart?
 	local character = localPlayer.Character
 	if not character then
-		return nil
+		return nil, nil
 	end
 
 	local rootPart = character:FindFirstChild("HumanoidRootPart")
 	if not rootPart or not rootPart:IsA("BasePart") then
-		return nil
+		return nil, nil
 	end
 
 	local existingPart = character:FindFirstChild(WIND_POINTER_PART_NAME)
