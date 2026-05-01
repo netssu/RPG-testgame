@@ -33,6 +33,8 @@ local info = workspace:WaitForChild("Info")
 local maxTowers
 local tower = {}
 local PlayerTowers = {}
+local PLACEMENT_MOB_CLEARANCE = 3
+local PLACEMENT_SPAWN_CLEARANCE = 8
 
 
 game.Workspace.Towers.ChildAdded:Connect(function(tower)
@@ -319,6 +321,66 @@ local function getMag(pos1, pos2)
 	return (pos1 - pos2).Magnitude
 end
 
+local function getFlatDistance(pos1, pos2)
+	local delta = pos1 - pos2
+	return Vector3.new(delta.X, 0, delta.Z).Magnitude
+end
+
+local function getMobRoot(model)
+	if not model or not model.Parent then
+		return nil
+	end
+
+	return model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+end
+
+local function getSpawnMarkers(map)
+	local markers = {}
+	if not map then
+		return markers
+	end
+
+	for _, descendant in ipairs(map:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			local name = descendant.Name
+			if name == "Start" or name == "RedStart" or name == "BlueStart" or name:match("^Start%d+$") then
+				table.insert(markers, descendant)
+			end
+		end
+	end
+
+	return markers
+end
+
+local function isNearEnemySpawn(cframe, map)
+	for _, spawnMarker in ipairs(getSpawnMarkers(map)) do
+		if getFlatDistance(spawnMarker.Position, cframe.Position) < PLACEMENT_SPAWN_CLEARANCE then
+			return true
+		end
+	end
+
+	return false
+end
+
+local function isOverlappingActiveMob(cframe)
+	for _, folderName in ipairs({"Mobs", "RedMobs", "BlueMobs"}) do
+		local folder = workspace:FindFirstChild(folderName)
+		if not folder then
+			continue
+		end
+
+		for _, mobModel in ipairs(folder:GetChildren()) do
+			local humanoid = mobModel:FindFirstChildOfClass("Humanoid")
+			local root = getMobRoot(mobModel)
+			if humanoid and humanoid.Health > 0 and root and getFlatDistance(root.Position, cframe.Position) < PLACEMENT_MOB_CLEARANCE then
+				return true
+			end
+		end
+	end
+
+	return false
+end
+
 local function createplacementbox(pos, unitName, sourcePlayer)
 	local offset = Vector3.new(0,-2,0)
 
@@ -389,6 +451,16 @@ function tower.Spawn(player:Player, value:StringValue, cframe:CFrame, previous:M
 	end
 
 	if allowedToSpawn and outofBounds then
+		if isNearEnemySpawn(cframe, workspace:FindFirstChild("Map") or workspace) then
+			ReplicatedStorage.Events.Client.Message:FireClient(player, "Cannot place towers on enemy spawn!", Color3.new(1, 0.184314, 0.0784314), "Error")
+			return false
+		end
+
+		if isOverlappingActiveMob(cframe) then
+			ReplicatedStorage.Events.Client.Message:FireClient(player, "Cannot place towers on top of enemies!", Color3.new(1, 0.184314, 0.0784314), "Error")
+			return false
+		end
+
 		local BuffsTable = {"Damage","Range","Cooldown","Price"}
 		local UnitStats = UpgradesModule[name].Upgrades
 

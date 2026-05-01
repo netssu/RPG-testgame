@@ -18,7 +18,7 @@ local function debugSkip(message, source)
 			tostring(Variables.SkipVoteOpen),
 			tostring(Variables.SkipVotes),
 			tostring(#Players:GetPlayers())
-		))
+			))
 	end
 end
 

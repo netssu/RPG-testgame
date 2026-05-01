@@ -322,7 +322,7 @@ end
 
 GeneralClaimButton = findFirstGuiButton(
 	IndexFrame:FindFirstChild("Button")
-	or IndexFrame:FindFirstChild("ClaimButton")
+		or IndexFrame:FindFirstChild("ClaimButton")
 )
 
 if not GeneralClaimButton then
@@ -377,7 +377,7 @@ for index, UnitName in allUnitTable do
 
 	local unitButton = findFirstGuiButton(
 		Template:FindFirstChild("Button")
-		or Template:FindFirstChild("Btn")
+			or Template:FindFirstChild("Btn")
 	)
 	if unitButton and unitButton:IsA("GuiButton") then
 		if not unitButton:FindFirstChildOfClass("UIScale") then

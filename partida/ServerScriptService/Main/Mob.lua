@@ -40,7 +40,37 @@ local function getScaledMobSpeed(model)
 	return originalSpeed.Value * getGameSpeed() * getSlowFactor(model)
 end
 
+local function getModelRootPart(model)
+	if not model or not model.Parent then
+		return nil
+	end
+
+	return model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+end
+
+local function getSpawnCFrameFromMap(map, team)
+	if not info.Versus.Value then
+		if map:FindFirstChild("Start") then
+			return map.Start.CFrame * CFrame.new(Vector3.new(0, 3, 0))
+		end
+
+		local pathStart = map:FindFirstChild("Start" .. tostring(workspace.Info.PathNumber.Value))
+		if pathStart then
+			return pathStart.CFrame
+		end
+	elseif team then
+		local teamStart = map:FindFirstChild(team .. "Start")
+		if teamStart then
+			return teamStart.CFrame
+		end
+	end
+
+	return nil
+end
+
 local function setMobHidden(model, hidden)
+	model:SetAttribute("MobHidden", hidden)
+
 	for _, obj in ipairs(model:GetDescendants()) do
 		if obj:IsA("BasePart") and obj.Name ~= "HumanoidRootPart" then
 			obj.Transparency = hidden and 1 or 0
@@ -49,6 +79,28 @@ local function setMobHidden(model, hidden)
 		elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("BillboardGui") then
 			obj.Enabled = not hidden
 		end
+	end
+end
+
+local function stopMobMovement(model, reveal)
+	if not model or not model.Parent then
+		return
+	end
+
+	local humanoid = model:FindFirstChildOfClass("Humanoid")
+	local root = getModelRootPart(model)
+
+	if reveal then
+		setMobHidden(model, false)
+	end
+
+	if humanoid then
+		humanoid.WalkSpeed = 0
+	end
+
+	if root then
+		root.AssemblyLinearVelocity = Vector3.zero
+		root.AssemblyAngularVelocity = Vector3.zero
 	end
 end
 
@@ -116,10 +168,20 @@ function mob.Move(newMob, map, team)
 			return
 		end
 
+		if info.GameOver.Value then
+			stopMobMovement(newMob, true)
+			return
+		end
+
 		newMob.MovingTo.Value = waypoint
 		local target = waypoints[waypoint].Position
 
 		while newMob.Parent and root.Parent and humanoid.Health > 0 and (root.Position - target).Magnitude > 2.5 do
+			if info.GameOver.Value then
+				stopMobMovement(newMob, true)
+				return
+			end
+
 			if mustWaitForFront(newMob, waypoint) then
 				humanoid.WalkSpeed = 0
 				root.AssemblyLinearVelocity = Vector3.zero
@@ -142,6 +204,11 @@ function mob.Move(newMob, map, team)
 		end
 	end
 
+	if info.GameOver.Value then
+		stopMobMovement(newMob, true)
+		return
+	end
+
 	setMobHidden(newMob, false)
 
 	if newMob.Parent then
@@ -152,6 +219,19 @@ function mob.Move(newMob, map, team)
 		map.Base.Humanoid:TakeDamage(math.min(humanoid.Health, map.Base.Humanoid.Health))
 	else
 		map[team .. 'Base'].Humanoid:TakeDamage(math.min(humanoid.Health, map[team .. 'Base'].Humanoid.Health))
+	end
+end
+
+function mob.StopAll(revealHidden)
+	for _, folderName in ipairs({"Mobs", "RedMobs", "BlueMobs"}) do
+		local folder = workspace:FindFirstChild(folderName)
+		if not folder then
+			continue
+		end
+
+		for _, mobModel in ipairs(folder:GetChildren()) do
+			stopMobMovement(mobModel, revealHidden)
+		end
 	end
 end
 
@@ -172,6 +252,9 @@ function mob.Spawn(name, quantity, map, old, health, money, speed, isBoss, unitS
 	if mobExists then
 		for i=1, quantity do
 			local currentFront = lastMob
+			if not getModelRootPart(currentFront) then
+				currentFront = nil
+			end
 			local mvt = 1
 
 			if currentFront and currentFront:FindFirstChild("MovingTo") then
@@ -179,6 +262,7 @@ function mob.Spawn(name, quantity, map, old, health, money, speed, isBoss, unitS
 			end
 
 			local newMob = mobExists:Clone()
+			newMob:SetAttribute("MobHidden", false)
 
 			if not newMob:FindFirstChild('Type') then
 				local val = Instance.new('StringValue', newMob)
@@ -201,18 +285,10 @@ function mob.Spawn(name, quantity, map, old, health, money, speed, isBoss, unitS
 			end
 			newMob.Humanoid.WalkSpeed = baseSpeed * getGameSpeed()
 
-			if old then
-				newMob:PivotTo(old.HumanoidRootPart.CFrame)
-			else
-				if not info.Versus.Value then
-					if map:FindFirstChild("Start") then 
-						newMob:PivotTo(map.Start.CFrame * CFrame.new(Vector3.new(0,3,0)))
-					else
-						newMob:PivotTo(map["Start"..tostring(game.Workspace.Info.PathNumber.Value)].CFrame)
-					end
-				else
-					newMob:PivotTo(map[team .. 'Start'].CFrame)
-				end
+			local previousRoot = getModelRootPart(old)
+			local spawnCFrame = previousRoot and previousRoot.CFrame or getSpawnCFrameFromMap(map, team)
+			if spawnCFrame then
+				newMob:PivotTo(spawnCFrame)
 			end
 
 			if team then

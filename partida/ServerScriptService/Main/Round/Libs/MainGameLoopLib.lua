@@ -21,17 +21,29 @@ local Warning = ReplicatedStorage.ServerWarningEvent
 local module = {}
 
 local EnemySpawnChances = Variables.RoundStats.EnemySpawnChances
+
+local function getActiveMobCount()
+	if info.Versus.Value then
+		local redMobs = workspace:FindFirstChild("RedMobs")
+		local blueMobs = workspace:FindFirstChild("BlueMobs")
+		return (redMobs and #redMobs:GetChildren() or 0) + (blueMobs and #blueMobs:GetChildren() or 0)
+	end
+
+	local mobsFolder = workspace:FindFirstChild("Mobs")
+	return mobsFolder and #mobsFolder:GetChildren() or 0
+end
+
+local function getSkipMobLimit()
+	return if info.Versus.Value then Variables.mobLimit * 2 else Variables.mobLimit
+end
+
+local function canOpenSkipVote()
+	return getActiveMobCount() <= getSkipMobLimit()
+end
+
 local function debugSkipState(message)
 	if RunService:IsStudio() then
-		local mobCount = 0
-		local mobsFolder = workspace:FindFirstChild("Mobs")
-		if mobsFolder then
-			mobCount = #mobsFolder:GetChildren()
-		else
-			local redMobs = workspace:FindFirstChild("RedMobs")
-			local blueMobs = workspace:FindFirstChild("BlueMobs")
-			mobCount = (redMobs and #redMobs:GetChildren() or 0) + (blueMobs and #blueMobs:GetChildren() or 0)
-		end
+		local mobCount = getActiveMobCount()
 
 		warn(string.format(
 			"[SkipDebug][Round %s/%s] %s | skip=%s open=%s votes=%s mobs=%s",
@@ -42,7 +54,7 @@ local function debugSkipState(message)
 			tostring(Variables.SkipVoteOpen),
 			tostring(Variables.SkipVotes),
 			tostring(mobCount)
-		))
+			))
 	end
 end
 
@@ -314,12 +326,18 @@ repeat
 	if Variables.CurrentRound < Variables.MaxWave then
 		Variables.Skip = false
 		Variables.SkipVotes = 0
-		Variables.SkipVoteOpen = true
 		table.clear(Variables.Players)
-		debugSkipState("Opened skip vote window")
-		ReplicatedStorage.Events.SkipGui:FireAllClients(true, { 
-			Required = true
-		})		
+		Variables.SkipVoteOpen = false
+
+		if canOpenSkipVote() then
+			Variables.SkipVoteOpen = true
+			debugSkipState("Opened skip vote window")
+			ReplicatedStorage.Events.SkipGui:FireAllClients(true, { 
+				Required = true
+			})
+		else
+			debugSkipState("Waiting to open skip vote window because there are too many mobs")
+		end
 	end
 
 	local roundEnd = false
@@ -333,6 +351,15 @@ repeat
 			Variables.SkipVoteOpen = false
 			break
 		end
+
+		if not Variables.SkipVoteOpen and Variables.CurrentRound < Variables.MaxWave and canOpenSkipVote() then
+			Variables.SkipVoteOpen = true
+			debugSkipState("Opened skip vote window after mob count dropped")
+			ReplicatedStorage.Events.SkipGui:FireAllClients(true, { 
+				Required = true
+			})
+		end
+
 		count += 1
 		--print(count)
 		if not info.Versus.Value then

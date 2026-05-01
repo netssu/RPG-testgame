@@ -1,65 +1,59 @@
-local selectedUnit = script.Parent.SelectedUnitValue
+-- SERVICES
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Upgrades = require(ReplicatedStorage.Upgrades)
-local Items = require(ReplicatedStorage.ItemStats)
-local ViewModule = require(ReplicatedStorage.Modules.ViewModule)
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
-local Traits = require(ReplicatedStorage.Modules.Traits)
-local MainFrame = script.Parent
+local Players = game:GetService("Players")
 
-local UIHandler = require(ReplicatedStorage.Modules.Client.UIHandler)
-local ViewPortModule = require(ReplicatedStorage.Modules.ViewPortModule)
-local GetUnitModel = require(ReplicatedStorage.Modules.GetUnitModel)
-local ButtonCreationModule = require(ReplicatedStorage.Modules.ButtonCreationModule)
-
-local player = game.Players.LocalPlayer
-local Inventory = player.PlayerGui:WaitForChild('UnitsGui').Inventory.Units
-local Scroll = Inventory.Frame.Left_Panel.Contents.Act.UnitsScroll
-local SecondInventory = ReplicatedStorage.Cache.Inventory
+-- CONSTANTS
 local DEBUG_EVOLVE = true
-
-local function debugEvolve(...)
-	if not DEBUG_EVOLVE then
-		return
-	end
-
---	warn("[EvolveDebug]", ...)
-end
-
-if _G.evolveTowerSelection == nil then
-	_G.evolveTowerSelection = false
-	debugEvolve("initialized_evolveTowerSelection", "value=false")
-end
-
-
 local CS = ColorSequence.new
 local CSK = ColorSequenceKeypoint.new
 local C3 = Color3.new
+
+-- VARIABLES
+local player = Players.LocalPlayer
+local MainFrame = script.Parent
+local gui = script.Parent.Parent
+local selectedUnit = MainFrame:WaitForChild("SelectedUnitValue")
+
+local Upgrades = require(ReplicatedStorage:WaitForChild("Upgrades"))
+local Items = require(ReplicatedStorage:WaitForChild("ItemStats"))
+local ViewModule = require(ReplicatedStorage.Modules:WaitForChild("ViewModule"))
+local Traits = require(ReplicatedStorage.Modules:WaitForChild("Traits"))
+local UIHandler = require(ReplicatedStorage.Modules.Client:WaitForChild("UIHandler"))
+local ViewPortModule = require(ReplicatedStorage.Modules:WaitForChild("ViewPortModule"))
+local GetUnitModel = require(ReplicatedStorage.Modules:WaitForChild("GetUnitModel"))
+local ButtonCreationModule = require(ReplicatedStorage.Modules:WaitForChild("ButtonCreationModule"))
+local Zone = require(ReplicatedStorage.Modules:WaitForChild("Zone"))
+
+-- Referência atualizada para a NOVA UI
+local Inventory = player.PlayerGui:WaitForChild('NewUI'):WaitForChild('Units')
+
+-- Caminho corrigido com base na nova hierarquia (Main -> ItemsTab -> Content)
+local MainContainer = Inventory:WaitForChild('Main')
+local Scroll = MainContainer:WaitForChild('ItemsTab'):WaitForChild('Content')
+local SecondInventory = ReplicatedStorage.Cache:WaitForChild('Inventory')
+
 local open = false
 local lastManualZoneState = nil
 local lastZoneDebugAt = 0
 local evolveZoneOccupied = false
 
+local evolutionBox = workspace:FindFirstChild('EvolutionBox')
+local evolutionHitbox = evolutionBox and evolutionBox:FindFirstChild('EvolutionHitbox')
+local Container = evolutionHitbox and Zone.new(evolutionHitbox)
 
+if _G.evolveTowerSelectTower == nil then
+	_G.evolveTowerSelectTower = nil
+end
 
-local gui = script.Parent.Parent
-
-debugEvolve("handler_loaded", "gui=" .. gui:GetFullName(), "main=" .. MainFrame:GetFullName())
-
-TweenService:Create(gui.PatternPreview, TweenInfo.new(3, Enum.EasingStyle.Linear, Enum.EasingDirection.In, -1, false, 0), {Position = UDim2.fromScale(0,1)}):Play()
-
--- set default unit displays
-MainFrame.SelectedUnit:ClearAllChildren()
-MainFrame.ResultUnit:ClearAllChildren()
-
-local selectedUnitFrame = ButtonCreationModule.createButton() :: TextButton
-selectedUnitFrame.Instance.Size = UDim2.fromScale(0.8,0.8)
-selectedUnitFrame.Instance.Parent = MainFrame.SelectedUnit
-
-local resultUnitFrame = ButtonCreationModule.createButton() :: TextButton
-resultUnitFrame.Instance.Size = UDim2.fromScale(0.8,0.8)
-resultUnitFrame.Instance.Parent = MainFrame.ResultUnit
+-- FUNCTIONS
+local function debugEvolve(...)
+	if not DEBUG_EVOLVE then
+		return
+	end
+	--	warn("[EvolveDebug]", ...)
+end
 
 local function update()
 	debugEvolve(
@@ -98,8 +92,8 @@ local function update()
 
 		local unit = Upgrades[selectedUnit.Value.Name]
 
-		if unit and selectedUnit.Value.Parent == game.Players.LocalPlayer.OwnedTowers then
-			local data = game.Players.LocalPlayer
+		if unit and selectedUnit.Value.Parent == player.OwnedTowers then
+			local data = player
 
 			if unit["Evolve"] then
 				if selectedUnit.Value:GetAttribute("Equipped") then
@@ -138,17 +132,9 @@ local function update()
 						else
 							icon:setAmountColor(Color3.new(1,0,0))
 						end
-						--icon.ImageGrad.UIGradient.Color = ReplicatedStorage.Borders[requiredUnit.Rarity].Color
-						--icon.Glow.UIGradient.Color = ReplicatedStorage.Borders[requiredUnit.Rarity].Color
 
-						template.Parent = MainFrame.UnitsNeed
+						template.Parent = MainFrame.InformationBox.UnitsNeed
 						local vp = ViewPortModule.CreateViewPort(requiredUnit.Name)
-						--if vp then
-						--	vp.ZIndex = 2
-						--	vp.Parent = icon
-
-
-						--end
 					else
 						local unitQuantity = 0
 						for _, x in data.Items:GetChildren() do
@@ -156,7 +142,7 @@ local function update()
 								unitQuantity = x.Value
 							end
 						end
-						--icon.TextLabel.Text = unitQuantity.."/"..tostring(v)
+
 						icon:setAmount(unitQuantity.."/"..tostring(v))
 
 						if unitQuantity >= v then
@@ -164,15 +150,6 @@ local function update()
 						else
 							icon:setAmountColor(Color3.new(1,0,0))
 						end
-
-						--icon.ImageGrad.UIGradient.Color = ReplicatedStorage.Borders[requiredUnit.Rarity].Color
-						--icon.Glow.UIGradient.Color = ReplicatedStorage.Borders[requiredUnit.Rarity].Color
-
-						--local vp = ViewPortModule.CreateViewPort(i)
-						--if vp then
-						--vp.ZIndex = 3
-						--vp.Parent = icon
-						--end
 
 						template.Parent = MainFrame.InformationBox.UnitsNeed
 					end
@@ -182,9 +159,6 @@ local function update()
 				MainFrame.SelectedUnit:ClearAllChildren()
 				MainFrame.ResultUnit:ClearAllChildren()
 
-				-- create our own frames
-				-- selectedUnit.Value -- selected unit
-				-- resultUnitName -- result unit(copy over the level stat) and trait
 				local selectedUnitFrame = ButtonCreationModule.createButton(selectedUnit.Value) :: TextButton
 				selectedUnitFrame.Instance.Size = UDim2.fromScale(0.8,0.8)
 				selectedUnitFrame.Instance.Parent = MainFrame.SelectedUnit
@@ -197,17 +171,9 @@ local function update()
 				resultUnitFrame:setAmount('LVL ' .. selectedUnit.Value:GetAttribute('Level'))
 				resultUnitFrame:setTrait(selectedUnit.Value:GetAttribute('Trait'))
 			end
-
-			local cancraft = true
-			for i, v in MainFrame.InformationBox.UnitsNeed:GetChildren() do
-				if v:IsA("ImageButton") then
-					if v.Quantity.TextColor3 == Color3.new(1,0,0) then
-						cancraft = false
-					end
-				end
-			end
 		end
 	end
+
 	if not MainFrame.SelectedUnit.Button:FindFirstChildOfClass("ViewportFrame") and not MainFrame.ResultUnit.Button:FindFirstChildOfClass("ViewportFrame") then
 		local Empty = ViewPortModule.CreateEmptyPort()
 		Empty.ZIndex = 8
@@ -225,124 +191,6 @@ local function update()
 		MainFrame.ResultUnit.Mark.Visible = true
 	end
 end
-
-selectedUnit.Changed:Connect(update)
-
-MainFrame.EvolveButton.Activated:Connect(function()
-	debugEvolve("evolve_button_activated", "selected=" .. tostring(selectedUnit.Value))
-
-	for i,v in MainFrame.SelectedUnit:GetChildren() do
-		if v.Name == "Empty_Slot" then
-			warn("Wrong One No Unit")
-			debugEvolve("evolve_button_blocked", "reason=no_unit")
-			return
-		end
-	end
-
-
-	local cancraft = true
-	for i, v in MainFrame.InformationBox.UnitsNeed:GetChildren() do
-		if v:IsA("ImageButton") then
-
-			if v.Quantity.TextColor3 == Color3.new(1,0,0) then
-				cancraft = false
-			end
-		end
-	end
-
-	if not cancraft then
-		debugEvolve("evolve_button_blocked", "reason=missing_requirements")
-		return
-	end
-
-	MainFrame.SelectedUnit:ClearAllChildren()
-	MainFrame.ResultUnit:ClearAllChildren()
-	warn(selectedUnit.Value)
-	local result = ReplicatedStorage.Functions.EvolveUnit:InvokeServer(selectedUnit.Value)
-	debugEvolve("evolve_result", "resultType=" .. typeof(result), "result=" .. tostring(result))
-	if typeof(result) == "Instance" then
-		update()
-		_G.CloseAll()
-		UIHandler.PlaySound("Redeem")
-		ViewModule.EvolveHatch({
-			Upgrades[result.Name],
-			result
-		})
-	end
-end)
-
-
-MainFrame.SelectUnit.Activated:Connect(function()
-	warn("Opening Frame")
-	debugEvolve(
-		"select_unit_activated",
-		"evolveTowerSelection=" .. tostring(_G.evolveTowerSelection),
-		"guiVisible=" .. tostring(gui.Visible),
-		"mainVisible=" .. tostring(MainFrame.Visible)
-	)
-	selectedUnit.Value = nil
-
-	if _G.evolveTowerSelection == false then
-		warn("Opening xo2")
-		script.Parent.Visible = false
-
-
-		_G.CloseAll("Units")
-
-		Inventory.Visible = true
-
-		if not Inventory.Visible then
-			warn("Not Opened")
-			Inventory.Visible = true
-		end
-
-
-		_G.evolveTowerSelection = true
-
-		local units = {}
-
-		for i,v in Scroll:GetChildren() do
-			table.insert(units, v)
-		end
-
-		for i,v in SecondInventory:GetChildren() do
-			table.insert(units, v)
-		end
-
-
-		for _, v in pairs(units) do
-			if v:IsA("ImageButton") and v:FindFirstChild("TowerValue") then
-				local towerVal = v.TowerValue.Value
-				if towerVal and typeof(towerVal) == "Instance" then
-					local unitName = towerVal.Name
-					local config = Upgrades[unitName]
-					if config then
-						local hasEvolve = config["Evolve"] ~= nil
-						v.Visible = hasEvolve
-					else
-						v.Visible = false
-					end
-				end
-			end
-		end
-
-		warn(selectedUnit.Value)
-	end
-end)
-
-local Zone = require(ReplicatedStorage.Modules.Zone)
-local evolutionBox = workspace:FindFirstChild('EvolutionBox')
-local evolutionHitbox = evolutionBox and evolutionBox:FindFirstChild('EvolutionHitbox')
-
-if not evolutionBox then
-	warn("[EvolveDebug] EvolutionBox not found in workspace")
-elseif not evolutionHitbox then
-	warn("[EvolveDebug] EvolutionHitbox not found inside EvolutionBox")
-else
-	debugEvolve("zone_initialized", "hitbox=" .. evolutionHitbox:GetFullName())
-end
-
-local Container = evolutionHitbox and Zone.new(evolutionHitbox)
 
 local function onEvolveZoneEntered(source)
 	if evolveZoneOccupied then
@@ -403,7 +251,7 @@ local function onEvolveZoneExited(source)
 	end
 
 	for _, v in pairs(units) do
-		if v:IsA("ImageButton") and v:FindFirstChild("TowerValue") then
+		if v:IsA("GuiObject") and v:FindFirstChild("TowerValue") then
 			local towerVal = v.TowerValue.Value
 			if towerVal and typeof(towerVal) == "Instance" then
 				v.Visible = true
@@ -419,6 +267,173 @@ local function onEvolveZoneExited(source)
 		"canSummon=" .. tostring(_G.CanSummon)
 	)
 end
+
+-- INIT
+if _G.evolveTowerSelection == nil then
+	_G.evolveTowerSelection = false
+	debugEvolve("initialized_evolveTowerSelection", "value=false")
+end
+
+_G.evolveTowerSelectTower = function(tower)
+	selectedUnit.Value = tower
+end
+
+if not evolutionBox then
+	warn("[EvolveDebug] EvolutionBox not found in workspace")
+elseif not evolutionHitbox then
+	warn("[EvolveDebug] EvolutionHitbox not found inside EvolutionBox")
+else
+	debugEvolve("zone_initialized", "hitbox=" .. evolutionHitbox:GetFullName())
+end
+
+debugEvolve("handler_loaded", "gui=" .. gui:GetFullName(), "main=" .. MainFrame:GetFullName())
+
+TweenService:Create(gui.PatternPreview, TweenInfo.new(3, Enum.EasingStyle.Linear, Enum.EasingDirection.In, -1, false, 0), {Position = UDim2.fromScale(0,1)}):Play()
+
+MainFrame.SelectedUnit:ClearAllChildren()
+MainFrame.ResultUnit:ClearAllChildren()
+
+local initSelectedUnitFrame = ButtonCreationModule.createButton() :: TextButton
+initSelectedUnitFrame.Instance.Size = UDim2.fromScale(0.8,0.8)
+initSelectedUnitFrame.Instance.Parent = MainFrame.SelectedUnit
+
+local initResultUnitFrame = ButtonCreationModule.createButton() :: TextButton
+initResultUnitFrame.Instance.Size = UDim2.fromScale(0.8,0.8)
+initResultUnitFrame.Instance.Parent = MainFrame.ResultUnit
+
+selectedUnit.Changed:Connect(update)
+
+MainFrame.EvolveButton.Activated:Connect(function()
+	debugEvolve("evolve_button_activated", "selected=" .. tostring(selectedUnit.Value))
+
+	if not selectedUnit.Value then return end
+
+	for i,v in MainFrame.SelectedUnit:GetChildren() do
+		if v.Name == "Empty_Slot" then
+			warn("Wrong One No Unit")
+			debugEvolve("evolve_button_blocked", "reason=no_unit")
+			return
+		end
+	end
+
+	local cancraft = true
+	local unitConfig = Upgrades[selectedUnit.Value.Name]
+
+	if unitConfig and unitConfig.Evolve then
+		local data = player
+		for reqName, reqAmount in pairs(unitConfig.Evolve.EvolutionRequirement) do
+			local requiredUnitConfig = Upgrades[tostring(reqName)]
+			local isItem = (requiredUnitConfig == nil)
+
+			if not isItem then
+				local unitQuantity = 0
+				for _, x in pairs(data.OwnedTowers:GetChildren()) do
+					if x.Name == reqName then
+						unitQuantity += 1
+					end
+				end
+				if unitQuantity < reqAmount then
+					cancraft = false
+					break
+				end
+			else
+				local itemQuantity = 0
+				for _, x in pairs(data.Items:GetChildren()) do
+					if x.Name == reqName then
+						itemQuantity = x.Value
+						break
+					end
+				end
+				if itemQuantity < reqAmount then
+					cancraft = false
+					break
+				end
+			end
+		end
+	else
+		cancraft = false
+	end
+
+	if not cancraft then
+		debugEvolve("evolve_button_blocked", "reason=missing_requirements")
+		return
+	end
+
+	MainFrame.SelectedUnit:ClearAllChildren()
+	MainFrame.ResultUnit:ClearAllChildren()
+	warn(selectedUnit.Value)
+
+	local result = ReplicatedStorage.Functions.EvolveUnit:InvokeServer(selectedUnit.Value)
+	debugEvolve("evolve_result", "resultType=" .. typeof(result), "result=" .. tostring(result))
+
+	if typeof(result) == "Instance" then
+		update()
+		_G.CloseAll()
+		UIHandler.PlaySound("Redeem")
+		ViewModule.EvolveHatch({
+			Upgrades[result.Name],
+			result
+		})
+	else
+		-- Restaura a UI chamando o update() caso algo dê errado no lado do servidor
+		update()
+	end
+end)
+
+MainFrame.SelectUnit.Activated:Connect(function()
+	warn("Opening Frame")
+	debugEvolve(
+		"select_unit_activated",
+		"evolveTowerSelection=" .. tostring(_G.evolveTowerSelection),
+		"guiVisible=" .. tostring(gui.Visible),
+		"mainVisible=" .. tostring(MainFrame.Visible)
+	)
+	selectedUnit.Value = nil
+
+	if _G.evolveTowerSelection == false then
+		warn("Opening xo2")
+		script.Parent.Visible = false
+
+		_G.CloseAll("Units")
+
+		Inventory.Visible = true
+
+		if not Inventory.Visible then
+			warn("Not Opened")
+			Inventory.Visible = true
+		end
+
+		_G.evolveTowerSelection = true
+
+		local units = {}
+
+		for i,v in Scroll:GetChildren() do
+			table.insert(units, v)
+		end
+
+		for i,v in SecondInventory:GetChildren() do
+			table.insert(units, v)
+		end
+
+		for _, v in pairs(units) do
+			if v:IsA("GuiObject") and v:FindFirstChild("TowerValue") then
+				local towerVal = v.TowerValue.Value
+				if towerVal and typeof(towerVal) == "Instance" then
+					local unitName = towerVal.Name
+					local config = Upgrades[unitName]
+					if config then
+						local hasEvolve = config["Evolve"] ~= nil
+						v.Visible = hasEvolve
+					else
+						v.Visible = false
+					end
+				end
+			end
+		end
+
+		warn(selectedUnit.Value)
+	end
+end)
 
 if Container then
 	Container.playerEntered:Connect(function(plr)

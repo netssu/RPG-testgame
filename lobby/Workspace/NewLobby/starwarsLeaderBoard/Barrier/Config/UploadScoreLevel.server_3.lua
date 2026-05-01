@@ -1,4 +1,4 @@
-local ods = game:GetService("DataStoreService"):GetOrderedDataStore("RobuxSpentLeaderboard", 2)
+local ods = game:GetService("DataStoreService"):GetOrderedDataStore("TimeSpentLeaderboard", 2)
 --warn("\n LEVEL UPLOAD SCRIPT LOADED! \n")
 function updateBoard(board, data)
 	for k, v in data do

@@ -5,7 +5,7 @@ local GuiService = game:GetService("GuiService")
 local UserInputService = game:GetService("UserInputService")
 
 -- CONSTANTS
-local SKIP_CORNER_POSITION = UDim2.new(0.786, 0, 0.34, 0)
+local SKIP_CENTER_POSITION = UDim2.fromScale(0.5, 0.5)
 
 -- VARIABLES
 local player = Players.LocalPlayer
@@ -13,7 +13,8 @@ local playerGui = player:WaitForChild("PlayerGui")
 
 -- Referenciando a nova UI que configuramos anteriormente
 local SkipUI = playerGui:WaitForChild("NewUI"):WaitForChild("Skip")
-SkipUI.Position = SKIP_CORNER_POSITION
+SkipUI.AnchorPoint = Vector2.new(0.5, 0.5)
+SkipUI.Position = SKIP_CENTER_POSITION
 
 local UIHandler = require(ReplicatedStorage.Modules.Client.UIHandler)
 
@@ -48,7 +49,7 @@ ReplicatedStorage.Events.SkipGui.OnClientEvent:Connect(function(visible, SecondA
 
 	if visible == true then
 		setInteractionContext("WaveSkip")
-		SkipUI.Position = SKIP_CORNER_POSITION
+		SkipUI.Position = SKIP_CENTER_POSITION
 	elseif visible == false then
 		setInteractionContext(nil)
 	end

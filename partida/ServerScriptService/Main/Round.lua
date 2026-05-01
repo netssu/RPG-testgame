@@ -371,6 +371,7 @@ function round.StartGame(host)
 			info.Victory.Value = true
 			info.GameOver.Value = true
 			info.Message.Value = "VICTORY"
+			mob.StopAll(true)
 
 
 

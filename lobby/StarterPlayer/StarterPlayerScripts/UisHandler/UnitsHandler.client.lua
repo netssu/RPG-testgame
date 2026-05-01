@@ -252,10 +252,21 @@ local function clearSlotDisplay(slot, index)
 	clearPhysicalSlot(slot)
 
 	local templateFolder = getTemplateFolder()
-	local closedTemplate = templateFolder and templateFolder:FindFirstChild("Closed")
+	if not templateFolder then return end
 
-	if closedTemplate then
-		local clone = closedTemplate:Clone()
+	-- Lógica adicionada para verificar o nível e decidir qual template usar (Opened ou Closed)
+	local playerLevel = player.PlayerLevel.Value
+	local requiredLevel = requiredSlotLevel[index] or math.huge
+
+	local templateToUse
+	if playerLevel >= requiredLevel then
+		templateToUse = templateFolder:FindFirstChild("Opened")
+	else
+		templateToUse = templateFolder:FindFirstChild("Closed")
+	end
+
+	if templateToUse then
+		local clone = templateToUse:Clone()
 		clone.Size = UDim2.fromScale(1, 1)
 		clone.Position = UDim2.fromScale(0.5, 0.5)
 		clone.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -350,47 +361,6 @@ local function getDictionaryLength(dictionary)
 	return count
 end
 
-local function getTowerValueObject(guiObject)
-	if not guiObject then
-		return nil
-	end
-
-	local towerValue = nil
-	for _, child in guiObject:GetChildren() do
-		if child.Name == "TowerValue" and child:IsA("ObjectValue") then
-			towerValue = child
-		end
-	end
-
-	return towerValue
-end
-
-local function setTowerValueObject(guiObject, tower)
-	if not guiObject then
-		return nil
-	end
-
-	local towerValue = nil
-	for _, child in guiObject:GetChildren() do
-		if child.Name == "TowerValue" then
-			if child:IsA("ObjectValue") and not towerValue then
-				towerValue = child
-			else
-				child:Destroy()
-			end
-		end
-	end
-
-	if not towerValue then
-		towerValue = Instance.new("ObjectValue")
-		towerValue.Name = "TowerValue"
-		towerValue.Parent = guiObject
-	end
-
-	towerValue.Value = tower
-	return towerValue
-end
-
 local function compare(arr1, arr2)
 	local arr1Length,arr2Length = getDictionaryLength(arr1),getDictionaryLength(arr2)
 	local higherIndex = math.max(arr1Length,arr2Length)
@@ -404,7 +374,7 @@ end
 local function GetSellPrice()
 	local totalPrice = 0
 	for _,button in pairs(sellButtonList) do
-		local towerVal = getTowerValueObject(button)
+		local towerVal = button:FindFirstChild("TowerValue")
 		if towerVal and towerVal.Value then
 			local rarity = UpgradesModule[towerVal.Value.Name].Rarity
 			local towerPriceValue = SellAndFuseModule.RaritySellPrice[rarity]
@@ -437,7 +407,7 @@ local function changeSelectState(stateChange)
 	local function ShowLockedUnits(bool)
 		for _, ui in pairs(ContentGrid:GetChildren()) do
 			if not ui:IsA("GuiObject") then continue end
-			local tVal = getTowerValueObject(ui)
+			local tVal = ui:FindFirstChild("TowerValue")
 			if not tVal or not tVal.Value then continue end
 			local towerValue = tVal.Value
 
@@ -486,7 +456,7 @@ end
 
 local function updateInventory()
 	for _, v in pairs(ContentGrid:GetChildren()) do
-		if v:IsA("GuiObject") and getTowerValueObject(v) and v:GetAttribute("Select") == true then
+		if v:IsA("GuiObject") and v:FindFirstChild("TowerValue") and v:GetAttribute("Select") == true then
 			v:SetAttribute("Select", false)
 			break
 		end
@@ -511,7 +481,7 @@ local function updateInventory()
 	local ownTowersButton = {}
 	for i, v in pairs(ContentGrid:GetChildren()) do
 		if v:IsA("GuiObject") then
-			local tValue = getTowerValueObject(v)
+			local tValue = v:FindFirstChild("TowerValue")
 			if tValue and tValue.Value then
 				local statsTower = UpgradesModule[tValue.Value.Name]
 				if statsTower then
@@ -603,7 +573,7 @@ refreshInventoryButtonVisibility = function()
 	for _, towerButton in pairs(ContentGrid:GetChildren()) do
 		if not towerButton:IsA("GuiObject") then continue end
 
-		local tVal = getTowerValueObject(towerButton)
+		local tVal = towerButton:FindFirstChild("TowerValue")
 		if not (tVal and tVal.Value) then
 			continue
 		end
@@ -629,12 +599,7 @@ end
 local function addButton(tower)
 	-- Evita duplicatas
 	for _, button in pairs(ContentGrid:GetChildren()) do
-		if button:IsA("GuiObject") then
-			local towerValue = getTowerValueObject(button)
-			if towerValue and towerValue.Value == tower then
-				return
-			end
-		end
+		if button:IsA("GuiObject") and button:FindFirstChild("TowerValue") and button.TowerValue.Value == tower then return end
 	end
 
 	-- Pega o status da torre para saber a raridade
@@ -649,7 +614,10 @@ local function addButton(tower)
 	button.Name = "Tower"..tower.Name
 	button.Visible = true
 
-	setTowerValueObject(button, tower)
+	local towerValueInstance = Instance.new("ObjectValue")
+	towerValueInstance.Name = "TowerValue"
+	towerValueInstance.Value = tower
+	towerValueInstance.Parent = button
 
 	-- Referências baseadas na nova hierarquia da imagem
 	local profile = button:FindFirstChild("Profile")
@@ -661,8 +629,8 @@ local function addButton(tower)
 
 		if statsTower then
 			local baseStats = statsTower.Upgrades[1]
-			if textTemp:FindFirstChild("Amount") then
-				textTemp.Amount.Text = "$" .. baseStats.Price
+			if textTemp:FindFirstChild("Amount") then 
+				textTemp.Amount.Text = "$" .. baseStats.Price 
 			end
 		end
 	end
@@ -700,7 +668,7 @@ local function addButton(tower)
 	end)
 
 	-- O próprio template é o botão agora, então usamos 'button.Activated'
-	button.Activated:Connect(function()
+	button.Activated:Connect(function() 
 		if isJunkTraderSelectionActive() then
 			if canUseTowerInCurrentSelectionMode(tower) then
 				_G.junkTraderSelectTower(button, tower)
@@ -710,6 +678,13 @@ local function addButton(tower)
 
 		if _G.traitTowerSelection == true then
 			selectTowerForWillpower(button, tower)
+			return
+		end
+
+		if _G.evolveTowerSelection == true then
+			if typeof(_G.evolveTowerSelectTower) == "function" then
+				_G.evolveTowerSelectTower(tower)
+			end
 			return
 		end
 
@@ -751,11 +726,10 @@ local function addButton(tower)
 				local oldLevel, oldExp = fuseTower:GetAttribute("Level"), fuseTower:GetAttribute("Exp")
 
 				for index,fuseBtn in pairs(fuseButtonList) do
-					local towerValueObject = getTowerValueObject(fuseBtn)
-					local selectedTower = towerValueObject and towerValueObject.Value
-					if not selectedTower then continue end
-					local towerRarity = UpgradesModule[selectedTower.Name].Rarity
-					local towerLevel = selectedTower:GetAttribute("Level")
+					local tValue = fuseBtn:FindFirstChild("TowerValue") and fuseBtn.TowerValue.Value
+					if not tValue then continue end
+					local towerRarity = UpgradesModule[tValue.Name].Rarity
+					local towerLevel = tValue:GetAttribute("Level")
 					local addAmount = SellAndFuseModule.ExpFusing[towerRarity] * (1+ towerLevel * (4/50))
 					fuseExpCount += addAmount
 				end
@@ -879,7 +853,7 @@ end
 
 local function removeButton(tower)
 	for _, v in pairs(ContentGrid:GetChildren()) do
-		local tVal = getTowerValueObject(v)
+		local tVal = v:FindFirstChild("TowerValue")
 		if tVal and tVal.Value == tower then
 			v:Destroy()
 			return
@@ -897,7 +871,7 @@ end
 UserInputService.InputBegan:Connect(function(input)
 	if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not inGui then
 		for i, v in pairs(ContentGrid:GetChildren()) do
-			if v:IsA("GuiObject") and getTowerValueObject(v) and v:GetAttribute("Select") == true then
+			if v:IsA("GuiObject") and v:FindFirstChild("TowerValue") and v:GetAttribute("Select") == true then
 				v:SetAttribute("Select", false)
 				break
 			end
@@ -942,8 +916,7 @@ ConfirmFuseBtn.Activated:Connect(function()
 	if not fuseReceiverTower then return end
 	local fuseTowerList = {}
 	for _,fuseButton in pairs(fuseButtonList) do
-		local towerValueObject = getTowerValueObject(fuseButton)
-		local towerValue = towerValueObject and towerValueObject.Value
+		local towerValue = fuseButton:FindFirstChild("TowerValue") and fuseButton.TowerValue.Value
 		if towerValue then table.insert(fuseTowerList, towerValue) end
 	end
 	ReplicatedStorage.Events.FuseTower:FireServer(fuseReceiverTower, fuseTowerList)
@@ -954,10 +927,7 @@ ConfirmSellBtn.Activated:Connect(function()
 	if #sellButtonList > 0 then
 		local sellTowerList = {}
 		for _,button in pairs(sellButtonList) do
-			local towerValueObject = getTowerValueObject(button)
-			if towerValueObject and towerValueObject.Value then
-				table.insert(sellTowerList, towerValueObject.Value)
-			end
+			table.insert(sellTowerList, button.TowerValue.Value)
 		end
 		ReplicatedStorage.Events.SellItem:FireServer(sellTowerList)
 		changeSelectState("None")

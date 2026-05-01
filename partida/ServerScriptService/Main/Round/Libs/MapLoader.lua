@@ -3,6 +3,7 @@ local Players = game:GetService("Players")
 local ServerStorage = game:GetService("ServerStorage")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Variables = require(ServerScriptService.Main.Round.Variables)
+local Mob = require(ServerScriptService.Main.Mob)
 local TerrainSaveLoad = require(ServerStorage.ServerModules.TerrainSaveLoad)
 local StoryModeStats = require(ReplicatedStorage.StoryModeStats)
 local Lighting = game:GetService("Lighting")
@@ -111,10 +112,10 @@ function module.loadCompMap()
 				end
 			end
 		end
-		
+
 		SelectedMap.Lighting:Destroy() -- clear
 	end
-	
+
 	for i,v:BasePart in SelectedMap:GetChildren() do
 		if workspace:FindFirstChild(v.Name) then
 			for i, obj in v:GetChildren() do
@@ -124,7 +125,7 @@ function module.loadCompMap()
 			v.Parent = workspace
 		end
 	end
-	
+
 	for i,x in pairs(SelectedMap:GetChildren()) do -- Load map in (RED)
 		if x.Name == 'Lighting' then
 			for i,v in pairs(x:GetChildren()) do
@@ -162,7 +163,7 @@ function module.loadCompMap()
 
 	syncBaseMaxHealth(workspace.RedBase.Humanoid)
 	syncBaseMaxHealth(workspace.BlueBase.Humanoid)
-	
+
 	workspace.RedBase.Humanoid:GetPropertyChangedSignal('Health'):Connect(function()
 		if workspace.RedBase.Humanoid.Health <= 0 then
 			info.WinningTeam.Value = "Blue"
@@ -170,11 +171,10 @@ function module.loadCompMap()
 			Variables.died = true
 			info.GameOver.Value = true
 			info.Message.Value = "GAME OVER"
-			workspace.RedMobs:ClearAllChildren()
-			workspace.BlueMobs:ClearAllChildren()
+			Mob.StopAll(true)
 		end
 	end)
-	
+
 	workspace.BlueBase.Humanoid:GetPropertyChangedSignal('Health'):Connect(function()
 		if workspace.BlueBase.Humanoid.Health <= 0 then
 			info.WinningTeam.Value = "Red"
@@ -182,11 +182,10 @@ function module.loadCompMap()
 			Variables.died = true
 			info.GameOver.Value = true
 			info.Message.Value = "GAME OVER"
-			workspace.RedMobs:ClearAllChildren()
-			workspace.BlueMobs:ClearAllChildren()
+			Mob.StopAll(true)
 		end
 	end)
-	
+
 	return workspace -- i guess?
 end
 
@@ -246,7 +245,7 @@ function module.loadMainMap()
 			Variables.died = true
 			info.GameOver.Value = true
 			info.Message.Value = "GAME OVER"
-			game.Workspace.Mobs:ClearAllChildren()
+			Mob.StopAll(true)
 		end
 	end)
 

@@ -169,13 +169,13 @@ local function BuyItem()
 
 	local selectedName = selectedButton.Name
 	local oldButton = selectedButton
-	local buyRequestIsValid, returnMessage = pcall(function()
+	local buyRequestIsValid, requestStatus, returnMessage = pcall(function()
 		return BuyTravelingMerchantItemRemoteFunction:InvokeServer(selectedName)
 	end)
 
 	warn(returnMessage)
 
-	if buyRequestIsValid and returnMessage == "Valid" then
+	if buyRequestIsValid and requestStatus == "Valid" then
 		local instanceItem = TravelingMerchant.Items:FindFirstChild(selectedName)
 		if instanceItem then
 			instanceItem:Destroy()
@@ -185,11 +185,11 @@ local function BuyItem()
 		UpdateProfile(false)
 
 		if _G.Message then
-			_G.Message(returnMessage, Color3.fromRGB(255, 170, 0))
+			_G.Message(returnMessage or requestStatus, Color3.fromRGB(255, 170, 0))
 		end
 	else
 		if _G.Message then
-			_G.Message(returnMessage, Color3.fromRGB(255, 0, 0))
+			_G.Message(returnMessage or requestStatus or "Invalid", Color3.fromRGB(255, 0, 0))
 		end
 	end
 end

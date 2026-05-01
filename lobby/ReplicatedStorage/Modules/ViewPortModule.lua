@@ -4,7 +4,6 @@ local ItemsFolder = require(RS.Modules.GetItemModel)
 local BossFolder = require(RS.Modules.GetBossModel)
 local UnitFolder = require(RS.Modules.GetUnitModel)
 local RunService = game:GetService("RunService")
-local ContentProvider = game:GetService("ContentProvider")
 
 -- Cache for cloned UI elements to avoid repeated cloning
 local UIElementCache = {
@@ -18,8 +17,6 @@ local UIElementCache = {
 local ViewportPool = {}
 local ActiveViewports = {}
 local ViewportCount = 0
-local PreloadedViewportModels = {}
-local PreloadingViewportModels = {}
 
 -- Performance monitoring
 local LastFrameUpdate = tick()
@@ -109,42 +106,6 @@ local function setModelPosition(model, customCFrame)
 	end
 end
 
-local function stripViewportSurfaceAppearance(model)
-	if not model then
-		return
-	end
-
-	-- SurfaceAppearance com mapas externos pode falhar em previews/UI
-	-- e deixar o personagem invisível ou totalmente escuro.
-	for _, descendant in ipairs(model:GetDescendants()) do
-		if descendant:IsA("SurfaceAppearance") then
-			descendant:Destroy()
-		end
-	end
-end
-
-local function preloadViewportModel(name, modelTemplate)
-	if PreloadedViewportModels[name] or not modelTemplate then
-		return
-	end
-
-	if PreloadingViewportModels[name] then
-		return
-	end
-
-	PreloadingViewportModels[name] = true
-
-	-- Warm the asset cache without blocking viewport creation.
-	task.spawn(function()
-		pcall(function()
-			ContentProvider:PreloadAsync({modelTemplate})
-		end)
-
-		PreloadedViewportModels[name] = true
-		PreloadingViewportModels[name] = nil
-	end)
-end
-
 -- Batch UI element creation
 local function applyUIElements(viewport, shiny, customSize)
 	initializeCache()
@@ -203,10 +164,7 @@ module.CreateViewPort = function(Name, shiny, customSize, lowDetail)
 	local WorldModel = Instance.new("WorldModel")
 	WorldModel.Parent = ViewPort
 
-	preloadViewportModel(Name, ModelFolder[Name])
-
 	local Model = ModelFolder[Name]:Clone()
-	stripViewportSurfaceAppearance(Model)
 	Model.Parent = WorldModel
 
 	--if true then return Model end

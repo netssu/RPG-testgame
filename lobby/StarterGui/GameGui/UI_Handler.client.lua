@@ -73,6 +73,7 @@ local listOriginalAnchorPoint = ListFrame and ListFrame.AnchorPoint or nil
 local listIsOpen = ListFrame and ListFrame.Visible or false
 local listTween = nil
 local prev = nil
+local isFirstAutoOpen = false
 
 local function addGuiIfPresent(targetTable, gui)
 	if gui and gui:IsA("GuiObject") then
@@ -152,7 +153,7 @@ local function isListTarget(name)
 end
 
 local function debugSummonMenu(...)
---	warn("[SummonOpenDebug]", ...)
+	--	warn("[SummonOpenDebug]", ...)
 end
 
 local function getSummonMenuTarget()
@@ -531,7 +532,12 @@ local function closeall(except, dontOverride)
 
 	prev = except
 
-	toggleRobloxHud(not except)
+	if isFirstAutoOpen then
+		toggleRobloxHud(true)
+	else
+		toggleRobloxHud(not except)
+	end
+
 	UIHandlerModule.PlaySound(except and 'Open' or 'Close')
 
 	local foundInstance = selectInstanceFromString(except)
@@ -553,19 +559,24 @@ local function closeall(except, dontOverride)
 	end
 
 	if foundInstance then
-		setSimplebarVisible(false)
+		if not isFirstAutoOpen then
+			setSimplebarVisible(false)
+		end
+
 		foundInstance.AnchorPoint = Vector2.new(.5, .5)
 		foundInstance.Position = UDim2.fromScale(0.5, -0.5)
 
-		tween(workspace.Camera, 0.3, { FieldOfView = 90 })
-		if Lighting:FindFirstChild("NewUIBlur") then
-			tween(Lighting.NewUIBlur, 0.3, { Size = 24 })
-		end
+		if not isFirstAutoOpen then
+			tween(workspace.Camera, 0.3, { FieldOfView = 90 })
+			if Lighting:FindFirstChild("NewUIBlur") then
+				tween(Lighting.NewUIBlur, 0.3, { Size = 24 })
+			end
 
-		if foundInstance.Name == 'Units' then
-			UIHandlerModule.DisableAllButtons({ 'Slots' })
-		else
-			UIHandlerModule.DisableAllButtons()
+			if foundInstance.Name == 'Units' then
+				UIHandlerModule.DisableAllButtons({ 'Slots' })
+			else
+				UIHandlerModule.DisableAllButtons()
+			end
 		end
 
 		foundInstance.Visible = true
@@ -841,6 +852,7 @@ for i, v in buttonguis do
 
 	v:GetPropertyChangedSignal("Visible"):Connect(function()
 		if v.Visible then
+			if isFirstAutoOpen then return end
 			blur(false)
 		else
 			local otherVisible = false
@@ -861,6 +873,7 @@ for i, v in othermenus do
 
 	v:GetPropertyChangedSignal("Visible"):Connect(function()
 		if v.Visible then
+			if isFirstAutoOpen then return end
 			blur(true)
 		else
 			local otherVisible = false
@@ -905,7 +918,9 @@ _G.CloseAllEnabled = true
 
 for _, element in openuionstart do
 	if CanClaim() then
+		isFirstAutoOpen = true
 		closeall(element.Name)
+		isFirstAutoOpen = false
 	end
 end
 
