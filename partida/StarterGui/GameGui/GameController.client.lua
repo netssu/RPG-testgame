@@ -64,10 +64,6 @@ local RARITY_STARS = {
 	Secret = 6,
 	Unique = 5
 }
-local VALID_PLACEMENT_COLOR = Color3.fromRGB(90, 255, 125)
-local VALID_PLACEMENT_OUTLINE = Color3.fromRGB(216, 255, 156)
-local INVALID_PLACEMENT_COLOR = Color3.fromRGB(255, 74, 74)
-local INVALID_PLACEMENT_OUTLINE = Color3.fromRGB(255, 186, 186)
 local SelectedTowers = {}
 local slotButtonConnections = {}
 local ownedTowerConnections = {}
@@ -86,8 +82,6 @@ local GlobalGUI = gui.Parent:WaitForChild("GlobalGUI")
 local info = workspace:WaitForChild("Info")
 local Upgrade = playerguix:WaitForChild("NewUI"):WaitForChild("Scout")
 local SkipUI = playerguix:WaitForChild("NewUI"):WaitForChild("Skip")
-local SKIP_CENTER_POSITION = UDim2.fromScale(0.5, 0.5)
-local SKIP_HIDDEN_POSITION = UDim2.fromScale(0.5, -0.5)
 local selectedTower = nil
 local towerToSpawn = nil
 local towerToSpawnValue = nil
@@ -111,8 +105,6 @@ local activeEndScreen = nil
 local endScreenConnections = {}
 -- FUNCTIONS
 EmitModule.init()
-SkipUI.AnchorPoint = Vector2.new(0.5, 0.5)
-SkipUI.Position = SKIP_CENTER_POSITION
 local function getSlotByIndex(i)
 	return IngameHud.Bottom.Slot:FindFirstChild(tostring(i))
 end
@@ -264,34 +256,18 @@ local function moveGeneratedViewportIntoExistingViewport(targetViewport, generat
 		return nil
 	end
 
-	local parent = targetViewport.Parent
-	if not parent then
-		safeDestroyViewport(generatedViewport)
-		targetViewport:Destroy()
-		return nil
+	clearViewportContents(targetViewport)
+	targetViewport.BackgroundTransparency = 1
+
+	for _, child in generatedViewport:GetChildren() do
+		child.Parent = targetViewport
 	end
 
-	generatedViewport.Name = targetViewport.Name
-	generatedViewport.AnchorPoint = targetViewport.AnchorPoint
-	generatedViewport.Position = targetViewport.Position
-	generatedViewport.Size = targetViewport.Size
-	generatedViewport.Visible = targetViewport.Visible
-	generatedViewport.LayoutOrder = targetViewport.LayoutOrder
-	generatedViewport.Rotation = targetViewport.Rotation
-	generatedViewport.ZIndex = targetViewport.ZIndex
-	generatedViewport.SizeConstraint = targetViewport.SizeConstraint
-	generatedViewport.AutomaticSize = targetViewport.AutomaticSize
-	generatedViewport.ClipsDescendants = targetViewport.ClipsDescendants
-	generatedViewport.BackgroundColor3 = targetViewport.BackgroundColor3
-	generatedViewport.BackgroundTransparency = targetViewport.BackgroundTransparency
-	generatedViewport.BorderColor3 = targetViewport.BorderColor3
-	generatedViewport.BorderMode = targetViewport.BorderMode
-	generatedViewport.BorderSizePixel = targetViewport.BorderSizePixel
+	-- Remove apenas o ViewportFrame temporário criado pelo módulo.
+	-- O resultado fica: Profile > ViewportFrame > WorldModel, sem ViewportFrame dentro de ViewportFrame.
+	safeDestroyViewport(generatedViewport)
 
-	targetViewport:Destroy()
-	generatedViewport.Parent = parent
-
-	return generatedViewport
+	return targetViewport
 end
 
 local function populateSlotViewport(viewportFrame, tower)
@@ -404,9 +380,7 @@ local function clearSlotDisplay(slot, slotIndex)
 	end
 end
 
-local createplacementbox
 local AddPlaceholderTower
-local setPlacementVFXEnabled
 
 local function fillSlotDisplay(slot, tower)
 	if not slot or not tower then return end
@@ -609,43 +583,7 @@ local function MouseRaycast(model)
 	end
 	return raycastResult
 end
-local function isPlacementResultValid(result: RaycastResult?, tower: Model?)
-	if not result or not result.Instance or not tower then
-		return false
-	end
-
-	local parent = result.Instance.Parent
-	local parentName = parent and parent.Name
-	if parentName == "GroundPlace" or (player.Team and parentName == player.Team.Name .. "GroundPlace") then
-		return true
-	end
-
-	return parentName == "AirPlace" and upgradesModule[tower.Name].Upgrades[1].Type == "Air"
-end
-
-local function buildPlacementColorSequence(primaryColor: Color3, secondaryColor: Color3)
-	return ColorSequence.new{
-		ColorSequenceKeypoint.new(0, primaryColor),
-		ColorSequenceKeypoint.new(0.649, primaryColor),
-		ColorSequenceKeypoint.new(1, secondaryColor)
-	}
-end
-
-local function getOrCreatePlacementHighlight(tower: Model)
-	local highlight = tower:FindFirstChild("PlacementPreviewHighlight")
-	if highlight and highlight:IsA("Highlight") then
-		return highlight
-	end
-
-	highlight = Instance.new("Highlight")
-	highlight.Name = "PlacementPreviewHighlight"
-	highlight.DepthMode = Enum.HighlightDepthMode.Occluded
-	highlight.FillTransparency = 0.55
-	highlight.OutlineTransparency = 0.1
-	highlight.Parent = tower
-	return highlight
-end
-createplacementbox = function()
+local function createplacementbox()
 	local e = workspace.Towers:GetChildren()
 	for i, tower in e do
 		if tower:FindFirstChild("PlacementBox") or tower:GetAttribute("Ignore") then continue end
@@ -723,6 +661,15 @@ local function CreateRangeCircle(tower: Model, placeholder)
 		weld.Part1 = VFXTowerBasePart
 		weld.Parent = p
 		p.Parent = tower
+		local p2 = ReplicatedStorage.VFX.RangeSphere:Clone()
+		p2.Name = "Range"
+		p2.Size = Vector3.new(range * 2, range * 2, range * 2)
+		p2.CFrame = p.CFrame * CFrame.Angles(0, 0, math.rad(-90))
+		local weld2 = Instance.new("WeldConstraint")
+		weld2.Part0 = p2
+		weld2.Part1 = p
+		weld2.Parent = p2
+		p2.Parent = p
 		local att = script.Attachments.PlacementParticles:Clone()
 		att.Orientation = Vector3.new(0, 0, 0)
 		att.Position = Vector3.new(0, VFXTowerBasePart.Size.Y * -1.45, 0)
@@ -840,7 +787,6 @@ local function findSlotByTowerName(towerName)
 end
 local function RemovePlaceholderTower()
 	if towerToSpawn then
-		canPlace = false
 		local UnitSlot = findSlotByTowerName(towerToSpawn.Name)
 		if UnitSlot then
 			local limitText = getSlotLimitText(UnitSlot)
@@ -887,7 +833,6 @@ AddPlaceholderTower = function(name, unit)
 			end
 		end
 		local result = MouseRaycast(towerToSpawn)
-		local initialCanPlace = isPlacementResultValid(result, towerToSpawn)
 		if result and result.Instance then
 			local height = towerToSpawn:WaitForChild("HumanoidRootPart").Size.Y * 1.5
 			local x = result.Position.X
@@ -916,8 +861,6 @@ AddPlaceholderTower = function(name, unit)
 				PhysicsService:SetPartCollisionGroup(object, "Tower")
 			end
 		end
-		setPlacementVFXEnabled(towerToSpawn, initialCanPlace)
-		canPlace = initialCanPlace
 		if UserInputService.TouchEnabled then
 			script.Parent.PhoneControls.Visible = true
 		else
@@ -1195,7 +1138,7 @@ local function SpawnNewTower()
 			return
 		end
 		local placedTower = spawnTowerFunction:InvokeServer(towerToSpawnValue, towerToSpawn:WaitForChild("HumanoidRootPart").CFrame, false, true)
-		if typeof(placedTower) == "Instance" and placedTower:IsA("Model") then
+		if placedTower then
 			placedTowers += 1
 			selectedTower = placedTower
 			local placeanimation = script.PlaceAnimation:Clone()
@@ -1315,46 +1258,9 @@ local actions = {
 	Target = TargetFunc,
 	Spectate = SpectateFunc,
 }
-setPlacementVFXEnabled = function(tower: Model, state)
-	if not tower then
-		return
-	end
-
-	if tower:GetAttribute("PlacementVFXState") == state then
-		return
-	end
-
-	tower:SetAttribute("PlacementVFXState", state)
-
-	local fillColor = if state then VALID_PLACEMENT_COLOR else INVALID_PLACEMENT_COLOR
-	local outlineColor = if state then VALID_PLACEMENT_OUTLINE else INVALID_PLACEMENT_OUTLINE
-	local colorSequence = buildPlacementColorSequence(fillColor, outlineColor)
-
-	local highlight = getOrCreatePlacementHighlight(tower)
-	highlight.FillColor = fillColor
-	highlight.OutlineColor = outlineColor
-
-	local placementParticles = tower:FindFirstChild("PlacementParticles", true)
-	if placementParticles then
-		local outlineEmitter = placementParticles:FindFirstChild("Outline")
-		if outlineEmitter and outlineEmitter:IsA("ParticleEmitter") then
-			outlineEmitter.Color = colorSequence
-		end
-
-		local rippleEmitter = placementParticles:FindFirstChild("RIPPLE")
-		if rippleEmitter and rippleEmitter:IsA("ParticleEmitter") then
-			rippleEmitter.Color = colorSequence
-		end
-	end
-
-	for _, descendant in workspace.CurrentCamera:GetDescendants() do
-		if descendant:IsA("BasePart") then
-			descendant.Color = fillColor
-		end
-	end
-	local rangeCircle = tower:FindFirstChild("Range")
-	if rangeCircle and rangeCircle:IsA("BasePart") then
-		rangeCircle.Color = fillColor
+local function setPlacementVFXEnabled(tower: Model, state)
+	if state then
+	else
 	end
 end
 local function createHoverHighlight()
@@ -1398,408 +1304,385 @@ local function onKeyBindPress(input, processed)
 		end
 	end
 end
-local updateWaveDisplays
-local getActiveEndScreen
-local showEndScreen
-local setupEndScreen
-local DisplayEndScreen
-
-do
-	local function disconnectEndScreenConnections()
-		for i = 1, #endScreenConnections do
-			endScreenConnections[i]:Disconnect()
-		end
-		table.clear(endScreenConnections)
+local function disconnectEndScreenConnections()
+	for i = 1, #endScreenConnections do
+		endScreenConnections[i]:Disconnect()
 	end
-	local function hideAllEndScreens()
-		FailedScreen.Visible = false
-		VictoryScreen.Visible = false
-		activeEndScreen = nil
-	end
-	local function getNumberFromSources(sources, names)
-		for _, source in sources do
-			if source then
-				for _, name in names do
-					local attr = source:GetAttribute(name)
-					if typeof(attr) == "number" then
-						return attr
-					end
-					local child = source:FindFirstChild(name)
-					if child and child:IsA("ValueBase") and typeof(child.Value) == "number" then
-						return child.Value
-					end
+	table.clear(endScreenConnections)
+end
+local function hideAllEndScreens()
+	FailedScreen.Visible = false
+	VictoryScreen.Visible = false
+	activeEndScreen = nil
+end
+local function getNumberFromSources(sources, names)
+	for _, source in sources do
+		if source then
+			for _, name in names do
+				local attr = source:GetAttribute(name)
+				if typeof(attr) == "number" then
+					return attr
+				end
+				local child = source:FindFirstChild(name)
+				if child and child:IsA("ValueBase") and typeof(child.Value) == "number" then
+					return child.Value
 				end
 			end
 		end
-		return 0
 	end
-	local function getEndScreenTitle()
-		local worldValue = StoryModeStats.Worlds[info.World.Value]
-		if info.Raid.Value then
-			worldValue = info.WorldString.Value
-		end
-		if worldValue and worldValue ~= "" then
-			return worldValue
-		end
-		if info:FindFirstChild("WorldString") and info.WorldString.Value ~= "" then
-			return info.WorldString.Value
-		end
-		return "Destroyed Kamino"
+	return 0
+end
+local function getEndScreenTitle()
+	local worldValue = StoryModeStats.Worlds[info.World.Value]
+	if info.Raid.Value then
+		worldValue = info.WorldString.Value
 	end
-	local function getEndScreenActText()
-		if info.Infinity.Value then
-			return "Infinity / Hard"
-		end
-		if info.Raid.Value then
-			return "Act " .. info.Level.Value .. " / Raid"
-		end
-		if info.Event.Value then
-			return "Event"
-		end
-		if info.ChallengeNumber.Value > 0 then
-			local challengeData = ChallengeModule.Data[info.ChallengeNumber.Value]
-			local challengeName = if challengeData then challengeData.Name else "Challenge"
-			return "Act " .. info.Level.Value .. " / " .. challengeName
-		end
-		local modeName = "Normal"
-		if info.Mode.Value == 2 then
-			modeName = "Hard"
-		end
-		return "Act " .. info.Level.Value .. " / " .. modeName
+	if worldValue and worldValue ~= "" then
+		return worldValue
 	end
-	function updateWaveDisplays(currentWave)
-		local waveText = "Wave " .. tostring(currentWave)
-		local waveLabel = IngameHud.Top:FindFirstChild("WaveLabel")
-		if waveLabel then
-			waveLabel.Text = waveText
-		end
-		local versusHealth = IngameHud.Top:FindFirstChild("VersusHealth")
-		if versusHealth and versusHealth:FindFirstChild("Wave") then
-			versusHealth.Wave.Text = waveText
-		end
-		local textWave = IngameHud.Top:FindFirstChild("TextWave")
-		if textWave then
-			textWave.Text = waveText
-		end
+	if info:FindFirstChild("WorldString") and info.WorldString.Value ~= "" then
+		return info.WorldString.Value
 	end
-	local function getResultScreen(status)
-		local isVictory = info.Victory.Value or status == "VICTORY"
-		if info.Versus.Value and player.Team then
-			isVictory = player.Team.Name == info.WinningTeam.Value
-		end
-		return if isVictory then VictoryScreen else FailedScreen, isVictory
+	return "Destroyed Kamino"
+end
+local function getEndScreenActText()
+	if info.Infinity.Value then
+		return "Infinity / Hard"
 	end
-	function getActiveEndScreen()
-		if activeEndScreen then
-			return activeEndScreen
-		end
-		return if info.Victory.Value then VictoryScreen else FailedScreen
+	if info.Raid.Value then
+		return "Act " .. info.Level.Value .. " / Raid"
 	end
-	local function setEndScreenDetail(slot, labelText, amountText)
-		if not slot then return end
-		local textLabel = slot:FindFirstChild("Text")
-		local amountLabel = slot:FindFirstChild("Amount")
-		if textLabel and textLabel:IsA("TextLabel") then
-			textLabel.Text = labelText
-		end
-		if amountLabel and amountLabel:IsA("TextLabel") then
-			amountLabel.Text = amountText
-		end
+	if info.Event.Value then
+		return "Event"
 	end
-	local function setEndScreenButtonText(buttonFrame, value)
-		if not buttonFrame then return end
-		local textLabel = buttonFrame:FindFirstChild("Text")
-		if textLabel and textLabel:IsA("TextLabel") then
-			textLabel.Text = value
-		end
+	if info.ChallengeNumber.Value > 0 then
+		local challengeData = ChallengeModule.Data[info.ChallengeNumber.Value]
+		local challengeName = if challengeData then challengeData.Name else "Challenge"
+		return "Act " .. info.Level.Value .. " / " .. challengeName
 	end
-	local function setEndScreenButtonVisible(buttonFrame, value)
-		if not buttonFrame then return end
-		if buttonFrame:IsA("GuiObject") then
-			buttonFrame.Visible = value
-		end
+	local modeName = "Normal"
+	if info.Mode.Value == 2 then
+		modeName = "Hard"
 	end
-	local function connectEndScreenButton(buttonFrame, callback)
-		if not buttonFrame then return end
-		local button = buttonFrame:FindFirstChild("Btn")
-		if button and button:IsA("GuiButton") then
-			endScreenConnections[#endScreenConnections + 1] = button.Activated:Connect(callback)
-		elseif buttonFrame:IsA("GuiButton") then
-			endScreenConnections[#endScreenConnections + 1] = buttonFrame.Activated:Connect(callback)
-		end
+	return "Act " .. info.Level.Value .. " / " .. modeName
+end
+local function updateWaveDisplays(currentWave)
+	local waveText = "Wave " .. tostring(currentWave)
+	local waveLabel = IngameHud.Top:FindFirstChild("WaveLabel")
+	if waveLabel then
+		waveLabel.Text = waveText
 	end
-	local function createFlatNumberSequence(value)
-		return NumberSequence.new({
-			NumberSequenceKeypoint.new(0, value),
-			NumberSequenceKeypoint.new(1, value)
-		})
+	local versusHealth = IngameHud.Top:FindFirstChild("VersusHealth")
+	if versusHealth and versusHealth:FindFirstChild("Wave") then
+		versusHealth.Wave.Text = waveText
 	end
-	local function tweenGradientTransparency(gradient, fromValue, toValue, duration)
-		if not gradient or not gradient:IsA("UIGradient") then
-			return
-		end
-		local proxy = Instance.new("NumberValue")
-		local connection
-		gradient.Transparency = createFlatNumberSequence(fromValue)
-		connection = proxy:GetPropertyChangedSignal("Value"):Connect(function()
-			gradient.Transparency = createFlatNumberSequence(proxy.Value)
-		end)
-		proxy.Value = fromValue
-		local tween = TweenService:Create(proxy, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Value = toValue
-		})
-		tween.Completed:Once(function()
-			if connection then
-				connection:Disconnect()
-			end
-			proxy:Destroy()
-			gradient.Transparency = createFlatNumberSequence(toValue)
-		end)
-		tween:Play()
+	local textWave = IngameHud.Top:FindFirstChild("TextWave")
+	if textWave then
+		textWave.Text = waveText
 	end
-	local function getRewardSlots(screen)
-		local rewardsFrame = screen.Main.Content:FindFirstChild("Rewards")
-		if not rewardsFrame then
-			return nil, {}
-		end
-		local slotsFolder = rewardsFrame:FindFirstChild("Slots")
-		if not slotsFolder then
-			return rewardsFrame, {}
-		end
-		local slots = {}
-		for _, child in slotsFolder:GetChildren() do
-			if child:IsA("GuiObject") and tonumber(child.Name) then
-				slots[#slots + 1] = child
-			end
-		end
-		table.sort(slots, function(a, b)
-			return (tonumber(a.Name) or 0) < (tonumber(b.Name) or 0)
-		end)
-		return rewardsFrame, slots
+end
+local function getResultScreen(status)
+	local isVictory = info.Victory.Value or status == "VICTORY"
+	if info.Versus.Value and player.Team then
+		isVictory = player.Team.Name == info.WinningTeam.Value
 	end
-	local function getProgressSlots(screen)
-		local progressFrame = screen.Main.Content:FindFirstChild("Progress")
-		if not progressFrame then
-			return nil, {}
-		end
-		local content = progressFrame:FindFirstChild("Content")
-		if not content then
-			return progressFrame, {}
-		end
-		local slots = {}
-		for _, child in content:GetChildren() do
-			if child:IsA("GuiObject") and tonumber(child.Name) then
-				slots[#slots + 1] = child
-			end
-		end
-		table.sort(slots, function(a, b)
-			return (tonumber(a.Name) or 0) < (tonumber(b.Name) or 0)
-		end)
-		return progressFrame, slots
+	return if isVictory then VictoryScreen else FailedScreen, isVictory
+end
+local function getActiveEndScreen()
+	if activeEndScreen then
+		return activeEndScreen
 	end
-	local function applyGradientSequence(target, colorSequence)
-		if not target or not colorSequence then
-			return
+	return if info.Victory.Value then VictoryScreen else FailedScreen
+end
+local function setEndScreenDetail(slot, labelText, amountText)
+	if not slot then return end
+	local textLabel = slot:FindFirstChild("Text")
+	local amountLabel = slot:FindFirstChild("Amount")
+	if textLabel and textLabel:IsA("TextLabel") then
+		textLabel.Text = labelText
+	end
+	if amountLabel and amountLabel:IsA("TextLabel") then
+		amountLabel.Text = amountText
+	end
+end
+local function setEndScreenButtonText(buttonFrame, value)
+	if not buttonFrame then return end
+	local textLabel = buttonFrame:FindFirstChild("Text")
+	if textLabel and textLabel:IsA("TextLabel") then
+		textLabel.Text = value
+	end
+end
+local function setEndScreenButtonVisible(buttonFrame, value)
+	if not buttonFrame then return end
+	if buttonFrame:IsA("GuiObject") then
+		buttonFrame.Visible = value
+	end
+end
+local function connectEndScreenButton(buttonFrame, callback)
+	if not buttonFrame then return end
+	local button = buttonFrame:FindFirstChild("Btn")
+	if button and button:IsA("GuiButton") then
+		endScreenConnections[#endScreenConnections + 1] = button.Activated:Connect(callback)
+	elseif buttonFrame:IsA("GuiButton") then
+		endScreenConnections[#endScreenConnections + 1] = buttonFrame.Activated:Connect(callback)
+	end
+end
+local function createFlatNumberSequence(value)
+	return NumberSequence.new({
+		NumberSequenceKeypoint.new(0, value),
+		NumberSequenceKeypoint.new(1, value)
+	})
+end
+local function tweenGradientTransparency(gradient, fromValue, toValue, duration)
+	if not gradient or not gradient:IsA("UIGradient") then
+		return
+	end
+	local proxy = Instance.new("NumberValue")
+	local connection
+	gradient.Transparency = createFlatNumberSequence(fromValue)
+	connection = proxy:GetPropertyChangedSignal("Value"):Connect(function()
+		gradient.Transparency = createFlatNumberSequence(proxy.Value)
+	end)
+	proxy.Value = fromValue
+	local tween = TweenService:Create(proxy, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Value = toValue
+	})
+	tween.Completed:Once(function()
+		if connection then
+			connection:Disconnect()
 		end
-		local gradient = target:FindFirstChild("UIGradient")
-		if gradient and gradient:IsA("UIGradient") then
-			gradient.Color = colorSequence
-		end
-		local stroke = target:FindFirstChildWhichIsA("UIStroke")
-		if stroke then
-			local strokeGradient = stroke:FindFirstChild("UIGradient")
-			if strokeGradient and strokeGradient:IsA("UIGradient") then
-				strokeGradient.Color = colorSequence
-			else
-				stroke.Color = colorSequence.Keypoints[1].Value
-			end
+		proxy:Destroy()
+		gradient.Transparency = createFlatNumberSequence(toValue)
+	end)
+	tween:Play()
+end
+local function getRewardSlots(screen)
+	local rewardsFrame = screen.Main.Content:FindFirstChild("Rewards")
+	if not rewardsFrame then
+		return nil, {}
+	end
+	local slotsFolder = rewardsFrame:FindFirstChild("Slots")
+	if not slotsFolder then
+		return rewardsFrame, {}
+	end
+	local slots = {}
+	for _, child in slotsFolder:GetChildren() do
+		if child:IsA("GuiObject") and tonumber(child.Name) then
+			slots[#slots + 1] = child
 		end
 	end
-	local function applyCardRarity(card, rarity)
-		local gradientObject = rarity and UnitGradients:FindFirstChild(rarity)
-		if not gradientObject then
-			return
-		end
-		applyGradientSequence(card, gradientObject.Color)
-		local bg = card:FindFirstChild("Bg")
-		if bg then
-			applyGradientSequence(bg, gradientObject.Color)
-		end
-		local profile = card:FindFirstChild("Profile")
-		if profile then
-			local profileBg = profile:FindFirstChild("Bg")
-			local profileShadow = profile:FindFirstChild("Shadow")
-			if profileBg then
-				applyGradientSequence(profileBg, gradientObject.Color)
-			end
-			if profileShadow then
-				applyGradientSequence(profileShadow, gradientObject.Color)
-			end
-		end
-		local bar = card:FindFirstChild("Bar")
-		if bar then
-			local fill = bar:FindFirstChild("Fill")
-			if fill then
-				applyGradientSequence(fill, gradientObject.Color)
-			end
+	table.sort(slots, function(a, b)
+		return (tonumber(a.Name) or 0) < (tonumber(b.Name) or 0)
+	end)
+	return rewardsFrame, slots
+end
+local function getProgressSlots(screen)
+	local progressFrame = screen.Main.Content:FindFirstChild("Progress")
+	if not progressFrame then
+		return nil, {}
+	end
+	local content = progressFrame:FindFirstChild("Content")
+	if not content then
+		return progressFrame, {}
+	end
+	local slots = {}
+	for _, child in content:GetChildren() do
+		if child:IsA("GuiObject") and tonumber(child.Name) then
+			slots[#slots + 1] = child
 		end
 	end
-	local function getTableField(tbl, names)
-		if type(tbl) ~= "table" then
-			return nil
+	table.sort(slots, function(a, b)
+		return (tonumber(a.Name) or 0) < (tonumber(b.Name) or 0)
+	end)
+	return progressFrame, slots
+end
+local function applyGradientSequence(target, colorSequence)
+	if not target or not colorSequence then
+		return
+	end
+	local gradient = target:FindFirstChild("UIGradient")
+	if gradient and gradient:IsA("UIGradient") then
+		gradient.Color = colorSequence
+	end
+	local stroke = target:FindFirstChildWhichIsA("UIStroke")
+	if stroke then
+		local strokeGradient = stroke:FindFirstChild("UIGradient")
+		if strokeGradient and strokeGradient:IsA("UIGradient") then
+			strokeGradient.Color = colorSequence
+		else
+			stroke.Color = colorSequence.Keypoints[1].Value
 		end
-		for _, name in names do
-			local value = tbl[name]
-			if value ~= nil then
+	end
+end
+local function applyCardRarity(card, rarity)
+	local gradientObject = rarity and UnitGradients:FindFirstChild(rarity)
+	if not gradientObject then
+		return
+	end
+	applyGradientSequence(card, gradientObject.Color)
+	local bg = card:FindFirstChild("Bg")
+	if bg then
+		applyGradientSequence(bg, gradientObject.Color)
+	end
+	local profile = card:FindFirstChild("Profile")
+	if profile then
+		local profileBg = profile:FindFirstChild("Bg")
+		local profileShadow = profile:FindFirstChild("Shadow")
+		if profileBg then
+			applyGradientSequence(profileBg, gradientObject.Color)
+		end
+		if profileShadow then
+			applyGradientSequence(profileShadow, gradientObject.Color)
+		end
+	end
+	local bar = card:FindFirstChild("Bar")
+	if bar then
+		local fill = bar:FindFirstChild("Fill")
+		if fill then
+			applyGradientSequence(fill, gradientObject.Color)
+		end
+	end
+end
+local function getTableField(tbl, names)
+	if type(tbl) ~= "table" then
+		return nil
+	end
+	for _, name in names do
+		local value = tbl[name]
+		if value ~= nil then
+			return value
+		end
+	end
+	return nil
+end
+local function getTableNumber(tbl, names)
+	local value = getTableField(tbl, names)
+	if type(value) == "number" then
+		return value
+	end
+	return nil
+end
+local function getTableString(tbl, names)
+	local value = getTableField(tbl, names)
+	if type(value) == "string" then
+		return value
+	end
+	return nil
+end
+local function getTableBoolean(tbl, names)
+	local value = getTableField(tbl, names)
+	if type(value) == "boolean" then
+		return value
+	end
+	return nil
+end
+local function getValueFromInstance(source, names)
+	if not source or typeof(source) ~= "Instance" then
+		return nil
+	end
+	for _, name in names do
+		local attr = source:GetAttribute(name)
+		if attr ~= nil then
+			return attr
+		end
+		local child = source:FindFirstChild(name)
+		if child and child:IsA("ValueBase") then
+			return child.Value
+		end
+	end
+	return nil
+end
+local function getNumberFromInstance(source, names)
+	local value = getValueFromInstance(source, names)
+	if type(value) == "number" then
+		return value
+	end
+	return nil
+end
+local function getBooleanFromInstance(source, names)
+	local value = getValueFromInstance(source, names)
+	if type(value) == "boolean" then
+		return value
+	end
+	return nil
+end
+local function getStringFromInstance(source, names)
+	local value = getValueFromInstance(source, names)
+	if type(value) == "string" then
+		return value
+	end
+	return nil
+end
+local function findOwnedTowerByName(towerName)
+	if not towerName or towerName == "" then
+		return nil
+	end
+	for _, ownedTower in player.OwnedTowers:GetChildren() do
+		if ownedTower.Name == towerName then
+			return ownedTower
+		end
+	end
+	return nil
+end
+local function getRewardItemImage(itemStats)
+	if type(itemStats) ~= "table" then
+		return nil
+	end
+	for _, fieldName in {"Image", "ImageId", "ImageID", "Icon", "IconId", "IconID", "AssetId", "AssetID"} do
+		local value = itemStats[fieldName]
+		if type(value) == "number" then
+			return "rbxassetid://" .. tostring(value)
+		elseif type(value) == "string" then
+			if string.find(value, "rbxassetid://") then
 				return value
 			end
-		end
-		return nil
-	end
-	local function getTableNumber(tbl, names)
-		local value = getTableField(tbl, names)
-		if type(value) == "number" then
+			if tonumber(value) then
+				return "rbxassetid://" .. value
+			end
 			return value
 		end
-		return nil
 	end
-	local function getTableString(tbl, names)
-		local value = getTableField(tbl, names)
-		if type(value) == "string" then
-			return value
-		end
-		return nil
+	return nil
+end
+local function getRewardSlotText(slot)
+	local nameLabel = slot:FindFirstChild("Name", true)
+	local amountLabel = slot:FindFirstChild("Amount", true) or slot:FindFirstChild("Price", true) or slot:FindFirstChild("Cost", true)
+	return nameLabel, amountLabel
+end
+local function getRewardSlotVisuals(slot)
+	local placeholder = slot:FindFirstChild("Placeholder", true)
+	local imageLabel = slot:FindFirstChild("ImageLabel", true)
+	return placeholder, imageLabel
+end
+local function clearRewardSlot(slot)
+	local nameLabel, amountLabel = getRewardSlotText(slot)
+	local placeholder, imageLabel = getRewardSlotVisuals(slot)
+	if nameLabel and nameLabel:IsA("TextLabel") then
+		nameLabel.Text = ""
 	end
-	local function getTableBoolean(tbl, names)
-		local value = getTableField(tbl, names)
-		if type(value) == "boolean" then
-			return value
-		end
-		return nil
+	if amountLabel and amountLabel:IsA("TextLabel") then
+		amountLabel.Text = ""
 	end
-	local function getValueFromInstance(source, names)
-		if not source or typeof(source) ~= "Instance" then
-			return nil
-		end
-		for _, name in names do
-			local attr = source:GetAttribute(name)
-			if attr ~= nil then
-				return attr
-			end
-			local child = source:FindFirstChild(name)
-			if child and child:IsA("ValueBase") then
-				return child.Value
+	if placeholder then
+		for _, child in placeholder:GetChildren() do
+			if child:IsA("ViewportFrame") then
+				child:Destroy()
 			end
 		end
-		return nil
 	end
-	local function getNumberFromInstance(source, names)
-		local value = getValueFromInstance(source, names)
-		if type(value) == "number" then
-			return value
-		end
-		return nil
+	if imageLabel and imageLabel:IsA("ImageLabel") then
+		imageLabel.Image = ""
+		imageLabel.Visible = false
 	end
-	local function getBooleanFromInstance(source, names)
-		local value = getValueFromInstance(source, names)
-		if type(value) == "boolean" then
-			return value
-		end
-		return nil
+	slot.Visible = false
+end
+local function buildRewardEntries(rewards)
+	local entries = {}
+	if not rewards then
+		return entries
 	end
-	local function getStringFromInstance(source, names)
-		local value = getValueFromInstance(source, names)
-		if type(value) == "string" then
-			return value
-		end
-		return nil
-	end
-	local function findOwnedTowerByName(towerName)
-		if not towerName or towerName == "" then
-			return nil
-		end
-		for _, ownedTower in player.OwnedTowers:GetChildren() do
-			if ownedTower.Name == towerName then
-				return ownedTower
-			end
-		end
-		return nil
-	end
-	local function getRewardItemImage(itemStats)
-		if type(itemStats) ~= "table" then
-			return nil
-		end
-		for _, fieldName in {"Image", "ImageId", "ImageID", "Icon", "IconId", "IconID", "AssetId", "AssetID"} do
-			local value = itemStats[fieldName]
-			if type(value) == "number" then
-				return "rbxassetid://" .. tostring(value)
-			elseif type(value) == "string" then
-				if string.find(value, "rbxassetid://") then
-					return value
-				end
-				if tonumber(value) then
-					return "rbxassetid://" .. value
-				end
-				return value
-			end
-		end
-		return nil
-	end
-	local function getRewardSlotText(slot)
-		local nameLabel = slot:FindFirstChild("Name", true)
-		local amountLabel = slot:FindFirstChild("Amount", true) or slot:FindFirstChild("Price", true) or slot:FindFirstChild("Cost", true)
-		return nameLabel, amountLabel
-	end
-	local function getRewardSlotVisuals(slot)
-		local placeholder = slot:FindFirstChild("Placeholder", true)
-		local imageLabel = slot:FindFirstChild("ImageLabel", true)
-		return placeholder, imageLabel
-	end
-	local function clearRewardSlot(slot)
-		local nameLabel, amountLabel = getRewardSlotText(slot)
-		local placeholder, imageLabel = getRewardSlotVisuals(slot)
-		if nameLabel and nameLabel:IsA("TextLabel") then
-			nameLabel.Text = ""
-		end
-		if amountLabel and amountLabel:IsA("TextLabel") then
-			amountLabel.Text = ""
-		end
-		if placeholder then
-			for _, child in placeholder:GetChildren() do
-				if child:IsA("ViewportFrame") then
-					child:Destroy()
-				end
-			end
-		end
-		if imageLabel and imageLabel:IsA("ImageLabel") then
-			imageLabel.Image = ""
-			imageLabel.Visible = false
-		end
-		slot.Visible = false
-	end
-	local function buildRewardEntries(rewards)
-		local entries = {}
-		if not rewards then
-			return entries
-		end
-		if rewards.OwnedTowers then
-			for _, tower in rewards.OwnedTowers do
-				local towerStats = upgradesModule[tower.Name]
-				local baseCost = 0
-				if towerStats and towerStats.Upgrades and towerStats.Upgrades[1] then
-					baseCost = towerStats.Upgrades[1].Price
-				end
-				entries[#entries + 1] = {
-					kind = "Tower",
-					name = tower.Name,
-					secondaryText = "$" .. tostring(baseCost),
-					rarity = getUnitRarity(tower.Name),
-					shiny = tower:GetAttribute("Shiny") == true
-				}
-			end
-		end
-		if rewards.Tower and rewards.Tower.unit then
-			local tower = rewards.Tower.unit
+	if rewards.OwnedTowers then
+		for _, tower in rewards.OwnedTowers do
 			local towerStats = upgradesModule[tower.Name]
 			local baseCost = 0
 			if towerStats and towerStats.Upgrades and towerStats.Upgrades[1] then
@@ -1813,566 +1696,580 @@ do
 				shiny = tower:GetAttribute("Shiny") == true
 			}
 		end
-		if rewards.Items then
-			for itemName, quantity in rewards.Items do
-				if quantity > 0 then
-					local itemStats = itemModule[itemName]
-					local rarity = if itemStats and itemStats.Rarity then itemStats.Rarity else nil
-					entries[#entries + 1] = {
-						kind = "Item",
-						name = itemName,
-						secondaryText = "x" .. tostring(quantity),
-						rarity = rarity,
-						image = getRewardItemImage(itemStats)
-					}
-				end
-			end
-		end
-		for rewardName, amount in rewards do
-			if rewardName ~= "Items" and rewardName ~= "OwnedTowers" and rewardName ~= "Tower" and rewardName ~= "CompReward" and rewardName ~= "TowerXP" and rewardName ~= "TowerExp" and rewardName ~= "UnitXP" and rewardName ~= "UnitExp" and rewardName ~= "XPProgress" and rewardName ~= "PlacedTowerXP" and rewardName ~= "PlacedUnitXP" and rewardName ~= "Progress" and rewardName ~= "PlayerXP" and rewardName ~= "PlayerExp" and rewardName ~= "XP" and rewardName ~= "Exp" and rewardName ~= "Experience" then
-				if type(amount) == "number" and amount > 0 then
-					entries[#entries + 1] = {
-						kind = "Currency",
-						name = rewardName,
-						secondaryText = "x" .. tostring(amount)
-					}
-				end
-			end
-		end
-		return entries
 	end
-	local function configureRewardSlot(slot, entry)
-		clearRewardSlot(slot)
-		local nameLabel, amountLabel = getRewardSlotText(slot)
-		local placeholder, imageLabel = getRewardSlotVisuals(slot)
-		if nameLabel and nameLabel:IsA("TextLabel") then
-			nameLabel.Text = entry.name or ""
+	if rewards.Tower and rewards.Tower.unit then
+		local tower = rewards.Tower.unit
+		local towerStats = upgradesModule[tower.Name]
+		local baseCost = 0
+		if towerStats and towerStats.Upgrades and towerStats.Upgrades[1] then
+			baseCost = towerStats.Upgrades[1].Price
 		end
-		if amountLabel and amountLabel:IsA("TextLabel") then
-			amountLabel.Text = entry.secondaryText or ""
-		end
-		if entry.rarity then
-			applyCardRarity(slot, entry.rarity)
-		end
-		if entry.kind == "Tower" and entry.name and placeholder then
-			local viewport = ViewPortModule.CreateViewPort(entry.name, entry.shiny == true)
-			viewport.Size = UDim2.fromScale(1, 1)
-			viewport.Name = entry.name
-			viewport.Parent = placeholder
-		elseif entry.image and imageLabel and imageLabel:IsA("ImageLabel") then
-			imageLabel.Image = tostring(entry.image)
-			imageLabel.Visible = true
-		end
-		slot.Visible = true
-	end
-	local function clearEndScreenRewards(screen)
-		local _, slots = getRewardSlots(screen)
-		for _, slot in slots do
-			clearRewardSlot(slot)
-		end
-	end
-	local function updateEndScreenRewards(screen, rewards)
-		local _, slots = getRewardSlots(screen)
-		local entries = buildRewardEntries(rewards)
-		for _, slot in slots do
-			clearRewardSlot(slot)
-		end
-		if #entries <= 0 then
-			return
-		end
-		for index = 1, math.min(#slots, #entries) do
-			configureRewardSlot(slots[index], entries[index])
-		end
-	end
-	local function normalizeProgressEntry(rawEntry, fallbackName)
-		local tower = nil
-		if typeof(rawEntry) == "Instance" then
-			tower = rawEntry
-		elseif type(rawEntry) == "table" then
-			for _, fieldName in {"Tower", "Unit", "TowerInstance", "UnitInstance", "OwnedTower", "Instance", "Object"} do
-				local candidate = rawEntry[fieldName]
-				if typeof(candidate) == "Instance" then
-					tower = candidate
-					break
-				end
-			end
-		end
-		local towerName = fallbackName
-		if not towerName and type(rawEntry) == "table" then
-			towerName = getTableString(rawEntry, {"TowerName", "UnitName", "Name", "Class"})
-		end
-		if not towerName and tower then
-			towerName = tower.Name
-		end
-		if not towerName or towerName == "" then
-			return nil
-		end
-		local ownedTower = tower or findOwnedTowerByName(towerName)
-		local rarity = if type(rawEntry) == "table" then getTableString(rawEntry, {"Rarity"}) else nil
-		local gainedXP = if type(rawEntry) == "table" then getTableNumber(rawEntry, {"GainedXP", "RewardedXP", "AddedXP", "XP", "Exp", "Amount"}) else nil
-		local currentLevel = if type(rawEntry) == "table" then getTableNumber(rawEntry, {"Level", "TowerLevel", "CurrentLevel"}) else nil
-		local currentXP = if type(rawEntry) == "table" then getTableNumber(rawEntry, {"CurrentXP", "CurrentExp", "XPNow", "ExpNow"}) else nil
-		local requiredXP = if type(rawEntry) == "table" then getTableNumber(rawEntry, {"RequiredXP", "NeededXP", "NextLevelXP", "MaxXP", "GoalXP"}) else nil
-		local shiny = if type(rawEntry) == "table" then getTableBoolean(rawEntry, {"Shiny"}) else nil
-		if not rarity then
-			rarity = getUnitRarity(towerName)
-		end
-		if currentLevel == nil and ownedTower then
-			currentLevel = getNumberFromInstance(ownedTower, {"Level", "TowerLevel", "CurrentLevel"})
-		end
-		if currentXP == nil and ownedTower then
-			currentXP = getNumberFromInstance(ownedTower, {"CurrentXP", "CurrentExp", "XP", "Exp", "Experience"})
-		end
-		if requiredXP == nil and ownedTower then
-			requiredXP = getNumberFromInstance(ownedTower, {"RequiredXP", "NeededXP", "NextLevelXP", "MaxXP"})
-		end
-		if shiny == nil and ownedTower then
-			shiny = getBooleanFromInstance(ownedTower, {"Shiny"})
-		end
-		if currentLevel == nil then
-			currentLevel = 1
-		end
-		if currentXP == nil then
-			currentXP = 0
-		end
-		if requiredXP == nil or requiredXP <= 0 then
-			requiredXP = math.max(currentXP, 1)
-		end
-		if gainedXP == nil then
-			gainedXP = 0
-		end
-		return {
-			name = towerName,
-			rarity = rarity or "Common",
-			level = currentLevel,
-			currentXP = currentXP,
-			requiredXP = requiredXP,
-			gainedXP = gainedXP,
-			shiny = shiny == true
+		entries[#entries + 1] = {
+			kind = "Tower",
+			name = tower.Name,
+			secondaryText = "$" .. tostring(baseCost),
+			rarity = getUnitRarity(tower.Name),
+			shiny = tower:GetAttribute("Shiny") == true
 		}
 	end
-	local function appendProgressEntries(source, entries)
-		if not source then
-			return
+	if rewards.Items then
+		for itemName, quantity in rewards.Items do
+			if quantity > 0 then
+				local itemStats = itemModule[itemName]
+				local rarity = if itemStats and itemStats.Rarity then itemStats.Rarity else nil
+				entries[#entries + 1] = {
+					kind = "Item",
+					name = itemName,
+					secondaryText = "x" .. tostring(quantity),
+					rarity = rarity,
+					image = getRewardItemImage(itemStats)
+				}
+			end
 		end
-		if typeof(source) == "Instance" then
-			local normalized = normalizeProgressEntry(source)
+	end
+	for rewardName, amount in rewards do
+		if rewardName ~= "Items" and rewardName ~= "OwnedTowers" and rewardName ~= "Tower" and rewardName ~= "CompReward" and rewardName ~= "TowerXP" and rewardName ~= "TowerExp" and rewardName ~= "UnitXP" and rewardName ~= "UnitExp" and rewardName ~= "XPProgress" and rewardName ~= "PlacedTowerXP" and rewardName ~= "PlacedUnitXP" and rewardName ~= "Progress" and rewardName ~= "PlayerXP" and rewardName ~= "PlayerExp" and rewardName ~= "XP" and rewardName ~= "Exp" and rewardName ~= "Experience" then
+			if type(amount) == "number" and amount > 0 then
+				entries[#entries + 1] = {
+					kind = "Currency",
+					name = rewardName,
+					secondaryText = "x" .. tostring(amount)
+				}
+			end
+		end
+	end
+	return entries
+end
+local function configureRewardSlot(slot, entry)
+	clearRewardSlot(slot)
+	local nameLabel, amountLabel = getRewardSlotText(slot)
+	local placeholder, imageLabel = getRewardSlotVisuals(slot)
+	if nameLabel and nameLabel:IsA("TextLabel") then
+		nameLabel.Text = entry.name or ""
+	end
+	if amountLabel and amountLabel:IsA("TextLabel") then
+		amountLabel.Text = entry.secondaryText or ""
+	end
+	if entry.rarity then
+		applyCardRarity(slot, entry.rarity)
+	end
+	if entry.kind == "Tower" and entry.name and placeholder then
+		local viewport = ViewPortModule.CreateViewPort(entry.name, entry.shiny == true)
+		viewport.Size = UDim2.fromScale(1, 1)
+		viewport.Name = entry.name
+		viewport.Parent = placeholder
+	elseif entry.image and imageLabel and imageLabel:IsA("ImageLabel") then
+		imageLabel.Image = tostring(entry.image)
+		imageLabel.Visible = true
+	end
+	slot.Visible = true
+end
+local function clearEndScreenRewards(screen)
+	local _, slots = getRewardSlots(screen)
+	for _, slot in slots do
+		clearRewardSlot(slot)
+	end
+end
+local function updateEndScreenRewards(screen, rewards)
+	local _, slots = getRewardSlots(screen)
+	local entries = buildRewardEntries(rewards)
+	for _, slot in slots do
+		clearRewardSlot(slot)
+	end
+	if #entries <= 0 then
+		return
+	end
+	for index = 1, math.min(#slots, #entries) do
+		configureRewardSlot(slots[index], entries[index])
+	end
+end
+local function normalizeProgressEntry(rawEntry, fallbackName)
+	local tower = nil
+	if typeof(rawEntry) == "Instance" then
+		tower = rawEntry
+	elseif type(rawEntry) == "table" then
+		for _, fieldName in {"Tower", "Unit", "TowerInstance", "UnitInstance", "OwnedTower", "Instance", "Object"} do
+			local candidate = rawEntry[fieldName]
+			if typeof(candidate) == "Instance" then
+				tower = candidate
+				break
+			end
+		end
+	end
+	local towerName = fallbackName
+	if not towerName and type(rawEntry) == "table" then
+		towerName = getTableString(rawEntry, {"TowerName", "UnitName", "Name", "Class"})
+	end
+	if not towerName and tower then
+		towerName = tower.Name
+	end
+	if not towerName or towerName == "" then
+		return nil
+	end
+	local ownedTower = tower or findOwnedTowerByName(towerName)
+	local rarity = if type(rawEntry) == "table" then getTableString(rawEntry, {"Rarity"}) else nil
+	local gainedXP = if type(rawEntry) == "table" then getTableNumber(rawEntry, {"GainedXP", "RewardedXP", "AddedXP", "XP", "Exp", "Amount"}) else nil
+	local currentLevel = if type(rawEntry) == "table" then getTableNumber(rawEntry, {"Level", "TowerLevel", "CurrentLevel"}) else nil
+	local currentXP = if type(rawEntry) == "table" then getTableNumber(rawEntry, {"CurrentXP", "CurrentExp", "XPNow", "ExpNow"}) else nil
+	local requiredXP = if type(rawEntry) == "table" then getTableNumber(rawEntry, {"RequiredXP", "NeededXP", "NextLevelXP", "MaxXP", "GoalXP"}) else nil
+	local shiny = if type(rawEntry) == "table" then getTableBoolean(rawEntry, {"Shiny"}) else nil
+	if not rarity then
+		rarity = getUnitRarity(towerName)
+	end
+	if currentLevel == nil and ownedTower then
+		currentLevel = getNumberFromInstance(ownedTower, {"Level", "TowerLevel", "CurrentLevel"})
+	end
+	if currentXP == nil and ownedTower then
+		currentXP = getNumberFromInstance(ownedTower, {"CurrentXP", "CurrentExp", "XP", "Exp", "Experience"})
+	end
+	if requiredXP == nil and ownedTower then
+		requiredXP = getNumberFromInstance(ownedTower, {"RequiredXP", "NeededXP", "NextLevelXP", "MaxXP"})
+	end
+	if shiny == nil and ownedTower then
+		shiny = getBooleanFromInstance(ownedTower, {"Shiny"})
+	end
+	if currentLevel == nil then
+		currentLevel = 1
+	end
+	if currentXP == nil then
+		currentXP = 0
+	end
+	if requiredXP == nil or requiredXP <= 0 then
+		requiredXP = math.max(currentXP, 1)
+	end
+	if gainedXP == nil then
+		gainedXP = 0
+	end
+	return {
+		name = towerName,
+		rarity = rarity or "Common",
+		level = currentLevel,
+		currentXP = currentXP,
+		requiredXP = requiredXP,
+		gainedXP = gainedXP,
+		shiny = shiny == true
+	}
+end
+local function appendProgressEntries(source, entries)
+	if not source then
+		return
+	end
+	if typeof(source) == "Instance" then
+		local normalized = normalizeProgressEntry(source)
+		if normalized then
+			entries[#entries + 1] = normalized
+		end
+		return
+	end
+	if type(source) ~= "table" then
+		return
+	end
+	local singleEntry = normalizeProgressEntry(source)
+	if singleEntry and source.Name then
+		entries[#entries + 1] = singleEntry
+		return
+	end
+	for key, value in source do
+		if typeof(value) == "Instance" or type(value) == "table" then
+			local fallbackName = if type(key) == "string" then key else nil
+			local normalized = normalizeProgressEntry(value, fallbackName)
 			if normalized then
 				entries[#entries + 1] = normalized
 			end
-			return
-		end
-		if type(source) ~= "table" then
-			return
-		end
-		local singleEntry = normalizeProgressEntry(source)
-		if singleEntry and source.Name then
-			entries[#entries + 1] = singleEntry
-			return
-		end
-		for key, value in source do
-			if typeof(value) == "Instance" or type(value) == "table" then
-				local fallbackName = if type(key) == "string" then key else nil
-				local normalized = normalizeProgressEntry(value, fallbackName)
-				if normalized then
-					entries[#entries + 1] = normalized
-				end
-			elseif type(value) == "number" and type(key) == "string" then
-				local normalized = normalizeProgressEntry({
-					Name = key,
-					GainedXP = value
-				})
-				if normalized then
-					entries[#entries + 1] = normalized
-				end
+		elseif type(value) == "number" and type(key) == "string" then
+			local normalized = normalizeProgressEntry({
+				Name = key,
+				GainedXP = value
+			})
+			if normalized then
+				entries[#entries + 1] = normalized
 			end
 		end
 	end
-	local function getPlayerProgressGainedXP(rewards)
-		local gainedXP = nil
-		if type(rewards) == "table" then
-			gainedXP = getTableNumber(rewards, {"PlayerXP", "PlayerExp", "XP", "Exp", "Experience", "XPGained"})
-		end
-		if gainedXP == nil then
-			local playerXPAttribute = player:GetAttribute("PlayerXP")
-			if type(playerXPAttribute) == "number" then
-				gainedXP = playerXPAttribute
-			end
-		end
-		if gainedXP == nil then
-			gainedXP = 0
-		end
-		return gainedXP
+end
+local function getPlayerProgressGainedXP(rewards)
+	local gainedXP = nil
+	if type(rewards) == "table" then
+		gainedXP = getTableNumber(rewards, {"PlayerXP", "PlayerExp", "XP", "Exp", "Experience", "XPGained"})
 	end
+	if gainedXP == nil then
+		local playerXPAttribute = player:GetAttribute("PlayerXP")
+		if type(playerXPAttribute) == "number" then
+			gainedXP = playerXPAttribute
+		end
+	end
+	if gainedXP == nil then
+		gainedXP = 0
+	end
+	return gainedXP
+end
 
-	local function getPlayerProgressImage()
-		local success, image = pcall(function()
-			return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
-		end)
-		if success and type(image) == "string" then
-			return image
-		end
-		return ""
+local function getPlayerProgressImage()
+	local success, image = pcall(function()
+		return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+	end)
+	if success and type(image) == "string" then
+		return image
 	end
+	return ""
+end
 
-	local function getPlayerProgressStartState(currentLevel, currentXP, gainedXP)
-		local previousLevel = currentLevel
-		local previousXP = currentXP
-		local remainingXP = math.max(math.floor(gainedXP or 0), 0)
-		while remainingXP > 0 do
-			if previousXP >= remainingXP then
-				previousXP -= remainingXP
-				remainingXP = 0
-			elseif previousLevel > 1 then
-				remainingXP -= previousXP
-				previousLevel -= 1
-				local previousRequiredXP = ExpModule.playerExpCalculation(previousLevel)
-				if type(previousRequiredXP) ~= "number" or previousRequiredXP < 0 then
-					previousRequiredXP = 0
-				end
-				previousXP = previousRequiredXP
-			else
-				previousXP = 0
-				remainingXP = 0
+local function getPlayerProgressStartState(currentLevel, currentXP, gainedXP)
+	local previousLevel = currentLevel
+	local previousXP = currentXP
+	local remainingXP = math.max(math.floor(gainedXP or 0), 0)
+	while remainingXP > 0 do
+		if previousXP >= remainingXP then
+			previousXP -= remainingXP
+			remainingXP = 0
+		elseif previousLevel > 1 then
+			remainingXP -= previousXP
+			previousLevel -= 1
+			local previousRequiredXP = ExpModule.playerExpCalculation(previousLevel)
+			if type(previousRequiredXP) ~= "number" or previousRequiredXP < 0 then
+				previousRequiredXP = 0
 			end
+			previousXP = previousRequiredXP
+		else
+			previousXP = 0
+			remainingXP = 0
 		end
-		return previousLevel, previousXP
 	end
+	return previousLevel, previousXP
+end
 
-	local function getProgressBarObjects(slot)
-		local barFrame = slot:FindFirstChild("Bar")
-		if not barFrame then
-			return nil, nil, nil, nil, nil
-		end
-		local nestedBar = barFrame:FindFirstChild("Bar")
-		local targetBar = nil
-		local fill = nil
-		local textLabel = nil
-		local levelGainLabel = nil
-		if nestedBar and nestedBar:IsA("GuiObject") then
-			fill = nestedBar:FindFirstChild("Fill")
-			textLabel = nestedBar:FindFirstChild("Text")
-			levelGainLabel = nestedBar:FindFirstChild("Lvl")
-			if fill and fill:IsA("GuiObject") then
-				targetBar = nestedBar
-			end
-		end
-		if not targetBar then
-			fill = barFrame:FindFirstChild("Fill")
-			textLabel = barFrame:FindFirstChild("Text")
-			levelGainLabel = barFrame:FindFirstChild("Lvl")
-			if fill and fill:IsA("GuiObject") then
-				targetBar = barFrame
-			end
-		end
-		local gradient = nil
+local function getProgressBarObjects(slot)
+	local barFrame = slot:FindFirstChild("Bar")
+	if not barFrame then
+		return nil, nil, nil, nil, nil
+	end
+	local nestedBar = barFrame:FindFirstChild("Bar")
+	local targetBar = nil
+	local fill = nil
+	local textLabel = nil
+	local levelGainLabel = nil
+	if nestedBar and nestedBar:IsA("GuiObject") then
+		fill = nestedBar:FindFirstChild("Fill")
+		textLabel = nestedBar:FindFirstChild("Text")
+		levelGainLabel = nestedBar:FindFirstChild("Lvl")
 		if fill and fill:IsA("GuiObject") then
-			gradient = fill:FindFirstChild("UIGradient")
-			if not gradient and targetBar then
-				gradient = targetBar:FindFirstChild("UIGradient")
-			end
+			targetBar = nestedBar
 		end
-		return barFrame, targetBar, fill, textLabel, levelGainLabel, gradient
 	end
-
-	local function buildProgressEntries(rewards)
-		local playerLevelValue = player:FindFirstChild("PlayerLevel")
-		local playerExpValue = player:FindFirstChild("PlayerExp")
-		if not playerLevelValue or not playerExpValue then
-			return {}
+	if not targetBar then
+		fill = barFrame:FindFirstChild("Fill")
+		textLabel = barFrame:FindFirstChild("Text")
+		levelGainLabel = barFrame:FindFirstChild("Lvl")
+		if fill and fill:IsA("GuiObject") then
+			targetBar = barFrame
 		end
-		local currentLevel = playerLevelValue.Value
-		local currentXP = playerExpValue.Value
-		local requiredXP = ExpModule.playerExpCalculation(currentLevel)
-		if type(requiredXP) ~= "number" or requiredXP <= 0 then
-			requiredXP = math.max(currentXP, 1)
-		end
-		local gainedXP = getPlayerProgressGainedXP(rewards)
-		local previousLevel = getPlayerProgressStartState(currentLevel, currentXP, gainedXP)
-		local levelGain = math.max(currentLevel - previousLevel, 0)
-		return {{
-			name = if player.DisplayName ~= "" then player.DisplayName else player.Name,
-			rarity = "Player XP",
-			level = currentLevel,
-			currentXP = currentXP,
-			requiredXP = requiredXP,
-			gainedXP = gainedXP,
-			levelGain = levelGain,
-			image = getPlayerProgressImage()
-		}}
 	end
-
-	local function clearProgressSlot(slot)
-		if not slot then
-			return
+	local gradient = nil
+	if fill and fill:IsA("GuiObject") then
+		gradient = fill:FindFirstChild("UIGradient")
+		if not gradient and targetBar then
+			gradient = targetBar:FindFirstChild("UIGradient")
 		end
+	end
+	return barFrame, targetBar, fill, textLabel, levelGainLabel, gradient
+end
+
+local function buildProgressEntries(rewards)
+	local playerLevelValue = player:FindFirstChild("PlayerLevel")
+	local playerExpValue = player:FindFirstChild("PlayerExp")
+	if not playerLevelValue or not playerExpValue then
+		return {}
+	end
+	local currentLevel = playerLevelValue.Value
+	local currentXP = playerExpValue.Value
+	local requiredXP = ExpModule.playerExpCalculation(currentLevel)
+	if type(requiredXP) ~= "number" or requiredXP <= 0 then
+		requiredXP = math.max(currentXP, 1)
+	end
+	local gainedXP = getPlayerProgressGainedXP(rewards)
+	local previousLevel = getPlayerProgressStartState(currentLevel, currentXP, gainedXP)
+	local levelGain = math.max(currentLevel - previousLevel, 0)
+	return {{
+		name = if player.DisplayName ~= "" then player.DisplayName else player.Name,
+		rarity = "Player XP",
+		level = currentLevel,
+		currentXP = currentXP,
+		requiredXP = requiredXP,
+		gainedXP = gainedXP,
+		levelGain = levelGain,
+		image = getPlayerProgressImage()
+	}}
+end
+
+local function clearProgressSlot(slot)
+	if not slot then
+		return
+	end
+	local profile = slot:FindFirstChild("Profile")
+	if profile then
+		if profile:FindFirstChild("Lvl") then
+			profile.Lvl.Text = ""
+		end
+		local imageLabel = profile:FindFirstChild("ImageLabel")
+		if imageLabel and imageLabel:IsA("ImageLabel") then
+			imageLabel.Image = ""
+			imageLabel.Visible = false
+		end
+	end
+	local classLabel = slot:FindFirstChild("Class")
+	if classLabel and classLabel:IsA("TextLabel") then
+		classLabel.Text = ""
+	end
+	local rarityLabel = slot:FindFirstChild("Rarity")
+	if rarityLabel and rarityLabel:IsA("TextLabel") then
+		rarityLabel.Text = ""
+	end
+	local _, _, fill, textLabel, levelGainLabel, gradient = getProgressBarObjects(slot)
+	if textLabel and textLabel:IsA("TextLabel") then
+		textLabel.Text = ""
+	end
+	if levelGainLabel and levelGainLabel:IsA("TextLabel") then
+		levelGainLabel.Text = ""
+		levelGainLabel.Visible = false
+	end
+	if fill and fill:IsA("GuiObject") then
+		fill.Size = UDim2.fromScale(0, 1)
+	end
+	if gradient and gradient:IsA("UIGradient") then
+		gradient.Transparency = createFlatNumberSequence(1)
+	end
+	slot.Visible = false
+end
+
+local function animateProgressSlot(slot, entry, order)
+	local _, _, fill, _, _, gradient = getProgressBarObjects(slot)
+	if not fill or not fill:IsA("GuiObject") then
+		return
+	end
+	local ratio = math.clamp(entry.currentXP / math.max(entry.requiredXP, 1), 0, 1)
+	fill.Size = UDim2.fromScale(0, 1)
+	if gradient and gradient:IsA("UIGradient") then
+		tweenGradientTransparency(gradient, 1, 0, 0.45)
+	end
+	task.delay(0.08 * (order - 1), function()
+		TweenService:Create(fill, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = UDim2.fromScale(ratio, 1)
+		}):Play()
+	end)
+end
+
+local function updateEndScreenProgress(screen, rewards)
+	local _, slots = getProgressSlots(screen)
+	local entries = buildProgressEntries(rewards)
+	for _, slot in slots do
+		clearProgressSlot(slot)
+	end
+	if #entries <= 0 then
+		return
+	end
+	for index = 1, math.min(#slots, #entries) do
+		local slot = slots[index]
+		local entry = entries[index]
 		local profile = slot:FindFirstChild("Profile")
+		local classLabel = slot:FindFirstChild("Class")
+		local rarityLabel = slot:FindFirstChild("Rarity")
+		local _, _, _, textLabel, levelGainLabel = getProgressBarObjects(slot)
 		if profile then
 			if profile:FindFirstChild("Lvl") then
-				profile.Lvl.Text = ""
+				profile.Lvl.Text = "Level " .. tostring(entry.level)
 			end
 			local imageLabel = profile:FindFirstChild("ImageLabel")
 			if imageLabel and imageLabel:IsA("ImageLabel") then
-				imageLabel.Image = ""
-				imageLabel.Visible = false
+				imageLabel.Image = entry.image or ""
+				imageLabel.Visible = (entry.image or "") ~= ""
 			end
 		end
-		local classLabel = slot:FindFirstChild("Class")
 		if classLabel and classLabel:IsA("TextLabel") then
-			classLabel.Text = ""
+			classLabel.Text = entry.name
 		end
-		local rarityLabel = slot:FindFirstChild("Rarity")
 		if rarityLabel and rarityLabel:IsA("TextLabel") then
-			rarityLabel.Text = ""
+			rarityLabel.Text = entry.rarity
 		end
-		local _, _, fill, textLabel, levelGainLabel, gradient = getProgressBarObjects(slot)
 		if textLabel and textLabel:IsA("TextLabel") then
-			textLabel.Text = ""
+			textLabel.Text = "Level " .. tostring(entry.level) .. " (" .. tostring(entry.currentXP) .. "/" .. tostring(entry.requiredXP) .. ")"
 		end
 		if levelGainLabel and levelGainLabel:IsA("TextLabel") then
-			levelGainLabel.Text = ""
-			levelGainLabel.Visible = false
-		end
-		if fill and fill:IsA("GuiObject") then
-			fill.Size = UDim2.fromScale(0, 1)
-		end
-		if gradient and gradient:IsA("UIGradient") then
-			gradient.Transparency = createFlatNumberSequence(1)
-		end
-		slot.Visible = false
-	end
-
-	local function animateProgressSlot(slot, entry, order)
-		local _, _, fill, _, _, gradient = getProgressBarObjects(slot)
-		if not fill or not fill:IsA("GuiObject") then
-			return
-		end
-		local ratio = math.clamp(entry.currentXP / math.max(entry.requiredXP, 1), 0, 1)
-		fill.Size = UDim2.fromScale(0, 1)
-		if gradient and gradient:IsA("UIGradient") then
-			tweenGradientTransparency(gradient, 1, 0, 0.45)
-		end
-		task.delay(0.08 * (order - 1), function()
-			TweenService:Create(fill, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-				Size = UDim2.fromScale(ratio, 1)
-			}):Play()
-		end)
-	end
-
-	local function updateEndScreenProgress(screen, rewards)
-		local _, slots = getProgressSlots(screen)
-		local entries = buildProgressEntries(rewards)
-		for _, slot in slots do
-			clearProgressSlot(slot)
-		end
-		if #entries <= 0 then
-			return
-		end
-		for index = 1, math.min(#slots, #entries) do
-			local slot = slots[index]
-			local entry = entries[index]
-			local profile = slot:FindFirstChild("Profile")
-			local classLabel = slot:FindFirstChild("Class")
-			local rarityLabel = slot:FindFirstChild("Rarity")
-			local _, _, _, textLabel, levelGainLabel = getProgressBarObjects(slot)
-			if profile then
-				if profile:FindFirstChild("Lvl") then
-					profile.Lvl.Text = "Level " .. tostring(entry.level)
-				end
-				local imageLabel = profile:FindFirstChild("ImageLabel")
-				if imageLabel and imageLabel:IsA("ImageLabel") then
-					imageLabel.Image = entry.image or ""
-					imageLabel.Visible = (entry.image or "") ~= ""
-				end
-			end
-			if classLabel and classLabel:IsA("TextLabel") then
-				classLabel.Text = entry.name
-			end
-			if rarityLabel and rarityLabel:IsA("TextLabel") then
-				rarityLabel.Text = entry.rarity
-			end
-			if textLabel and textLabel:IsA("TextLabel") then
-				textLabel.Text = "Level " .. tostring(entry.level) .. " (" .. tostring(entry.currentXP) .. "/" .. tostring(entry.requiredXP) .. ")"
-			end
-			if levelGainLabel and levelGainLabel:IsA("TextLabel") then
-				if entry.levelGain > 0 then
-					levelGainLabel.Text = "+" .. tostring(entry.levelGain)
-					levelGainLabel.Visible = true
-				else
-					levelGainLabel.Text = ""
-					levelGainLabel.Visible = false
-				end
-			end
-			slot.Visible = true
-			animateProgressSlot(slot, entry, index)
-		end
-	end
-
-	local function playEndScreenOpenAnimation(screen)
-
-		local main = screen:FindFirstChild("Main")
-		local header = screen:FindFirstChild("Header")
-		if main then
-			local mainScale = main:FindFirstChild("OpenScale")
-			if not mainScale then
-				mainScale = Instance.new("UIScale")
-				mainScale.Name = "OpenScale"
-				mainScale.Parent = main
-			end
-			local mainPosition = main.Position
-			mainScale.Scale = 0.9
-			main.Position = mainPosition + UDim2.fromScale(0, 0.04)
-			TweenService:Create(mainScale, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-				Scale = 1
-			}):Play()
-			TweenService:Create(main, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-				Position = mainPosition
-			}):Play()
-		end
-		if header then
-			local headerScale = header:FindFirstChild("OpenScale")
-			if not headerScale then
-				headerScale = Instance.new("UIScale")
-				headerScale.Name = "OpenScale"
-				headerScale.Parent = header
-			end
-			local headerPosition = header.Position
-			headerScale.Scale = 0.92
-			header.Position = headerPosition + UDim2.fromScale(0, -0.025)
-			TweenService:Create(headerScale, TweenInfo.new(0.24, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-				Scale = 1
-			}):Play()
-			TweenService:Create(header, TweenInfo.new(0.24, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-				Position = headerPosition
-			}):Play()
-		end
-	end
-	function showEndScreen(screen)
-		EndScreenGUIDisable(false)
-		if workspace.CurrentCamera:FindFirstChild("Blur") then
-			workspace.CurrentCamera.Blur:Destroy()
-		end
-		local blurEffect = Instance.new("BlurEffect")
-		blurEffect.Name = "Blur"
-		blurEffect.Parent = workspace.CurrentCamera
-		blurEffect.Size = 0
-		blurEffect.Enabled = true
-		TweenService:Create(blurEffect, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Size = 16
-		}):Play()
-		screen.Visible = true
-		playEndScreenOpenAnimation(screen)
-	end
-	function setupEndScreen(screen, status, rewards)
-		disconnectEndScreenConnections()
-		hideAllEndScreens()
-		activeEndScreen = screen
-		local leftInfo = screen.Main.Content:FindFirstChild("Leftinfo")
-		if leftInfo then
-			if leftInfo:FindFirstChild("Title") then
-				leftInfo.Title.Text = getEndScreenTitle()
-			end
-			if leftInfo:FindFirstChild("Act") then
-				leftInfo.Act.Text = getEndScreenActText()
-			end
-			local details = leftInfo:FindFirstChild("Details")
-			if details then
-				local takedowns = getNumberFromSources({player, info}, {"Takedowns", "TakeDowns", "Kills", "Eliminations"})
-				local moneyEarned = getNumberFromSources({player, info}, {"MoneyEarned", "EarnedMoney", "TotalMoneyEarned", "CashEarned"})
-				if moneyEarned <= 0 then
-					moneyEarned = playerMoney.Value
-				end
-				setEndScreenDetail(details:FindFirstChild("1"), "Units Placed:", tostring(placedTowers))
-				setEndScreenDetail(details:FindFirstChild("2"), "Total Damage:", tostring(player.Damage.Value))
-				setEndScreenDetail(details:FindFirstChild("3"), "Play Time:", formatTime(tick() - _G.Timestarted))
-				setEndScreenDetail(details:FindFirstChild("4"), "Takedowns:", tostring(takedowns))
-				setEndScreenDetail(details:FindFirstChild("5"), "Money Earned:", tostring(moneyEarned))
+			if entry.levelGain > 0 then
+				levelGainLabel.Text = "+" .. tostring(entry.levelGain)
+				levelGainLabel.Visible = true
+			else
+				levelGainLabel.Text = ""
+				levelGainLabel.Visible = false
 			end
 		end
-		updateEndScreenRewards(screen, rewards)
-		updateEndScreenProgress(screen, rewards)
-		local buttons = screen.Main.Content:FindFirstChild("Buttons")
-		local nextButton = if buttons then buttons:FindFirstChild("1") else nil
-		local replayButton = if buttons then buttons:FindFirstChild("2") else nil
-		local lobbyButton = if buttons then buttons:FindFirstChild("3") else nil
-		setEndScreenButtonText(nextButton, "Next")
-		setEndScreenButtonText(replayButton, "Replay")
-		setEndScreenButtonText(lobbyButton, "Back To Lobby")
-		local canShowNext = status ~= "GAME OVER" and not info.Event.Value and not info.Versus.Value and info.ChallengeNumber.Value < 0
-		local canShowReplay = not info.Versus.Value
-		if info.ChallengeNumber.Value > 0 then
-			canShowNext = false
-			canShowReplay = true
-		end
-		setEndScreenButtonVisible(nextButton, canShowNext)
-		setEndScreenButtonVisible(replayButton, canShowReplay)
-		setEndScreenButtonVisible(lobbyButton, true)
-		local eventsLocal = ReplicatedStorage:WaitForChild("Events")
-		local exitEvent = eventsLocal:WaitForChild("ExitGame")
-		local clicked = false
-		connectEndScreenButton(lobbyButton, function()
-			if clicked then
-				return
-			end
-			clicked = true
-			exitEvent:FireServer("Return")
-			if workspace.CurrentCamera:FindFirstChild("Blur") then
-				workspace.CurrentCamera.Blur:Destroy()
-			end
-			hideAllEndScreens()
-			EndScreenGUIDisable(true)
-		end)
-		connectEndScreenButton(replayButton, function()
-			if clicked then
-				return
-			end
-			clicked = true
-			exitEvent:FireServer("Replay")
-			if workspace.CurrentCamera:FindFirstChild("Blur") then
-				workspace.CurrentCamera.Blur:Destroy()
-			end
-			hideAllEndScreens()
-			EndScreenGUIDisable(true)
-		end)
-		if canShowNext then
-			connectEndScreenButton(nextButton, function()
-				if clicked then
-					return
-				end
-				clicked = true
-				exitEvent:FireServer("Next")
-				if workspace.CurrentCamera:FindFirstChild("Blur") then
-					workspace.CurrentCamera.Blur:Destroy()
-				end
-				hideAllEndScreens()
-				EndScreenGUIDisable(true)
-			end)
-		end
-		if screen:FindFirstChild("Closebtn") and screen.Closebtn:IsA("GuiButton") then
-			endScreenConnections[#endScreenConnections + 1] = screen.Closebtn.Activated:Connect(function()
-				if workspace.CurrentCamera:FindFirstChild("Blur") then
-					workspace.CurrentCamera.Blur:Destroy()
-				end
-				hideAllEndScreens()
-				EndScreenGUIDisable(true)
-			end)
-		end
-	end
-	function DisplayEndScreen(status)
-		local endScreen = getResultScreen(status)
-		setupEndScreen(endScreen, status, nil)
-		task.wait(1)
-		if gui.Parent:FindFirstChild("HatchInfo") then
-			return
-		end
-		showEndScreen(endScreen)
+		slot.Visible = true
+		animateProgressSlot(slot, entry, index)
 	end
 end
 
+local function playEndScreenOpenAnimation(screen)
+
+	local main = screen:FindFirstChild("Main")
+	local header = screen:FindFirstChild("Header")
+	if main then
+		local mainScale = main:FindFirstChild("OpenScale")
+		if not mainScale then
+			mainScale = Instance.new("UIScale")
+			mainScale.Name = "OpenScale"
+			mainScale.Parent = main
+		end
+		local mainPosition = main.Position
+		mainScale.Scale = 0.9
+		main.Position = mainPosition + UDim2.fromScale(0, 0.04)
+		TweenService:Create(mainScale, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Scale = 1
+		}):Play()
+		TweenService:Create(main, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Position = mainPosition
+		}):Play()
+	end
+	if header then
+		local headerScale = header:FindFirstChild("OpenScale")
+		if not headerScale then
+			headerScale = Instance.new("UIScale")
+			headerScale.Name = "OpenScale"
+			headerScale.Parent = header
+		end
+		local headerPosition = header.Position
+		headerScale.Scale = 0.92
+		header.Position = headerPosition + UDim2.fromScale(0, -0.025)
+		TweenService:Create(headerScale, TweenInfo.new(0.24, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Scale = 1
+		}):Play()
+		TweenService:Create(header, TweenInfo.new(0.24, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Position = headerPosition
+		}):Play()
+	end
+end
+local function showEndScreen(screen)
+	EndScreenGUIDisable(false)
+	if workspace.CurrentCamera:FindFirstChild("Blur") then
+		workspace.CurrentCamera.Blur:Destroy()
+	end
+	local blurEffect = Instance.new("BlurEffect")
+	blurEffect.Name = "Blur"
+	blurEffect.Parent = workspace.CurrentCamera
+	blurEffect.Size = 0
+	blurEffect.Enabled = true
+	TweenService:Create(blurEffect, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = 16
+	}):Play()
+	screen.Visible = true
+	playEndScreenOpenAnimation(screen)
+end
+local function setupEndScreen(screen, status, rewards)
+	disconnectEndScreenConnections()
+	hideAllEndScreens()
+	activeEndScreen = screen
+	local leftInfo = screen.Main.Content:FindFirstChild("Leftinfo")
+	if leftInfo then
+		if leftInfo:FindFirstChild("Title") then
+			leftInfo.Title.Text = getEndScreenTitle()
+		end
+		if leftInfo:FindFirstChild("Act") then
+			leftInfo.Act.Text = getEndScreenActText()
+		end
+		local details = leftInfo:FindFirstChild("Details")
+		if details then
+			local takedowns = getNumberFromSources({player, info}, {"Takedowns", "TakeDowns", "Kills", "Eliminations"})
+			local moneyEarned = getNumberFromSources({player, info}, {"MoneyEarned", "EarnedMoney", "TotalMoneyEarned", "CashEarned"})
+			if moneyEarned <= 0 then
+				moneyEarned = playerMoney.Value
+			end
+			setEndScreenDetail(details:FindFirstChild("1"), "Units Placed:", tostring(placedTowers))
+			setEndScreenDetail(details:FindFirstChild("2"), "Total Damage:", tostring(player.Damage.Value))
+			setEndScreenDetail(details:FindFirstChild("3"), "Play Time:", formatTime(tick() - _G.Timestarted))
+			setEndScreenDetail(details:FindFirstChild("4"), "Takedowns:", tostring(takedowns))
+			setEndScreenDetail(details:FindFirstChild("5"), "Money Earned:", tostring(moneyEarned))
+		end
+	end
+	updateEndScreenRewards(screen, rewards)
+	updateEndScreenProgress(screen, rewards)
+	local buttons = screen.Main.Content:FindFirstChild("Buttons")
+	local nextButton = if buttons then buttons:FindFirstChild("1") else nil
+	local replayButton = if buttons then buttons:FindFirstChild("2") else nil
+	local lobbyButton = if buttons then buttons:FindFirstChild("3") else nil
+	setEndScreenButtonText(nextButton, "Next")
+	setEndScreenButtonText(replayButton, "Replay")
+	setEndScreenButtonText(lobbyButton, "Back To Lobby")
+	local canShowNext = status ~= "GAME OVER" and not info.Event.Value and not info.Versus.Value and info.ChallengeNumber.Value < 0
+	local canShowReplay = not info.Versus.Value
+	if info.ChallengeNumber.Value > 0 then
+		canShowNext = false
+		canShowReplay = true
+	end
+	setEndScreenButtonVisible(nextButton, canShowNext)
+	setEndScreenButtonVisible(replayButton, canShowReplay)
+	setEndScreenButtonVisible(lobbyButton, true)
+	local eventsLocal = ReplicatedStorage:WaitForChild("Events")
+	local exitEvent = eventsLocal:WaitForChild("ExitGame")
+	local clicked = false
+	connectEndScreenButton(lobbyButton, function()
+		if clicked then
+			return
+		end
+		clicked = true
+		exitEvent:FireServer("Return")
+		if workspace.CurrentCamera:FindFirstChild("Blur") then
+			workspace.CurrentCamera.Blur:Destroy()
+		end
+		hideAllEndScreens()
+		EndScreenGUIDisable(true)
+	end)
+	connectEndScreenButton(replayButton, function()
+		if clicked then
+			return
+		end
+		clicked = true
+		exitEvent:FireServer("Replay")
+		if workspace.CurrentCamera:FindFirstChild("Blur") then
+			workspace.CurrentCamera.Blur:Destroy()
+		end
+		hideAllEndScreens()
+		EndScreenGUIDisable(true)
+	end)
+	if canShowNext then
+		connectEndScreenButton(nextButton, function()
+			if clicked then
+				return
+			end
+			clicked = true
+			exitEvent:FireServer("Next")
+			if workspace.CurrentCamera:FindFirstChild("Blur") then
+				workspace.CurrentCamera.Blur:Destroy()
+			end
+			hideAllEndScreens()
+			EndScreenGUIDisable(true)
+		end)
+	end
+	if screen:FindFirstChild("Closebtn") and screen.Closebtn:IsA("GuiButton") then
+		endScreenConnections[#endScreenConnections + 1] = screen.Closebtn.Activated:Connect(function()
+			if workspace.CurrentCamera:FindFirstChild("Blur") then
+				workspace.CurrentCamera.Blur:Destroy()
+			end
+			hideAllEndScreens()
+			EndScreenGUIDisable(true)
+		end)
+	end
+end
+local function DisplayEndScreen(status)
+	local endScreen = getResultScreen(status)
+	setupEndScreen(endScreen, status, nil)
+	task.wait(1)
+	if gui.Parent:FindFirstChild("HatchInfo") then
+		return
+	end
+	showEndScreen(endScreen)
+end
 local function SetupGameGui()
 	if not info.GameRunning.Value then return end
 	task.spawn(function()
-		TweenService:Create(SkipUI, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Position = SKIP_HIDDEN_POSITION}):Play()
+		TweenService:Create(SkipUI, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Position = UDim2.fromScale(0.5, -0.5)}):Play()
 		task.wait(0.2)
 		SkipUI.Visible = false
 	end)
@@ -2384,14 +2281,12 @@ local function SetupGameGui()
 		HealthFrame.Visible = true
 		SpeedBtn.Visible = true
 		if VersusHealth then VersusHealth.Visible = false end
-		local BaseHumanoid = map:WaitForChild("Base"):WaitForChild("Humanoid") :: Humanoid
-		local function updateBaseHealth()
-			HealthFrame.TextHealth.Text = "Health: " .. tostring(BaseHumanoid.Health .. "/" .. BaseHumanoid.MaxHealth)
-			TweenService:Create(HealthFrame.Fill, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.fromScale(math.clamp(BaseHumanoid.Health / BaseHumanoid.MaxHealth, 0, 1), 1)}):Play()
-		end
-		BaseHumanoid.HealthChanged:Connect(updateBaseHealth)
-		BaseHumanoid:GetPropertyChangedSignal("MaxHealth"):Connect(updateBaseHealth)
-		updateBaseHealth()
+		map:WaitForChild("Base").Humanoid.HealthChanged:Connect(function()
+			HealthFrame.TextHealth.Text = "Health: " .. tostring(map:WaitForChild("Base").Humanoid.Health .. "/" .. map:WaitForChild("Base").Humanoid.MaxHealth)
+			TweenService:Create(HealthFrame.Fill, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.fromScale(math.clamp(map:WaitForChild("Base").Humanoid.Health / map:WaitForChild("Base").Humanoid.MaxHealth, 0, 1), 1)}):Play()
+		end)
+		HealthFrame.TextHealth.Text = "Health: " .. tostring(map:WaitForChild("Base").Humanoid.Health .. "/" .. map:WaitForChild("Base").Humanoid.MaxHealth)
+		TweenService:Create(HealthFrame.Fill, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.fromScale(math.clamp(map:WaitForChild("Base").Humanoid.Health / map:WaitForChild("Base").Humanoid.MaxHealth, 0, 1), 1)}):Play()
 	else
 		warn("[Game Controller] Awaiting for versus UI to be scripted sir")
 		HealthFrame.Visible = false
@@ -2411,9 +2306,7 @@ local function SetupGameGui()
 				VersusHealth["Blue"].Bar.NumberDisplay.Text = `Health: {BlueHumanoid.Health}/{BlueHumanoid.MaxHealth}`
 			end
 			RedHumanoid.HealthChanged:Connect(updateRedHealth)
-			RedHumanoid:GetPropertyChangedSignal("MaxHealth"):Connect(updateRedHealth)
 			BlueHumanoid.HealthChanged:Connect(updateBlueHealth)
-			BlueHumanoid:GetPropertyChangedSignal("MaxHealth"):Connect(updateBlueHealth)
 			updateRedHealth()
 			updateBlueHealth()
 		end
@@ -2543,43 +2436,15 @@ UserInputService.InputBegan:Connect(onKeyBindPress)
 SkipUI.Button.Yes.Btn.Activated:Connect(function()
 	UIHandler.PlaySound("Skip")
 	if not SkipUI.Visible then return end
-
-	local skipContext = SkipUI:GetAttribute("InteractionContext")
-	if skipContext == "WaveSkip" then
-		local result = ReplicatedStorage.Functions.VoteForSkip:InvokeServer("ManualButton")
-		if result == true then
-			task.spawn(function()
-				TweenService:Create(SkipUI, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Position = SKIP_HIDDEN_POSITION}):Play()
-				task.wait(0.2)
-				SkipUI.Visible = false
-			end)
-		elseif typeof(result) == "string" then
-			if result == "Cannot skip on the final wave!" then
-				task.spawn(function()
-					TweenService:Create(SkipUI, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Position = SKIP_HIDDEN_POSITION}):Play()
-					task.wait(0.2)
-					SkipUI.Visible = false
-				end)
-			end
-			_G.Message(result, Color3.new(0.831373, 0, 0))
-		end
-		return
-	end
-
-	if skipContext ~= "StartGame" then
-		return
-	end
-
 	events.Client.VoteStartGame:FireServer()
 	task.spawn(function()
-		TweenService:Create(SkipUI, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Position = SKIP_HIDDEN_POSITION}):Play()
+		TweenService:Create(SkipUI, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Position = UDim2.new(0.438, 0, -0.5, 0)}):Play()
 		task.wait(0.2)
 		SkipUI.Visible = false
 	end)
 end)
 SkipUI.Button.No.Btn.Activated:Connect(function()
-	SkipUI:SetAttribute("InteractionContext", nil)
-	TweenService:Create(SkipUI, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Position = SKIP_HIDDEN_POSITION}):Play()
+	TweenService:Create(SkipUI, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Position = UDim2.new(0.438, 0, -0.5, 0)}):Play()
 	task.wait(0.2)
 	SkipUI.Visible = false
 end)
@@ -2731,18 +2596,16 @@ coroutine.resume(arrowCoroutine)
 _G.Timestarted = tick()
 events.Client.VoteStartGame.OnClientEvent:Connect(function(secondsLeft, YesVote, lastCall, UpdatedArgument)
 	if UpdatedArgument then
-		SkipUI:SetAttribute("InteractionContext", "StartGame")
-		SkipUI.Position = SKIP_CENTER_POSITION
 		SkipUI.Visible = true
+		TweenService:Create(SkipUI, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Position = UDim2.fromScale(0.5, 0.35)}):Play()
 		return
 	end
 	if lastCall then
 		coroutine.close(arrowCoroutine)
 		_G.Message("Game has started!", Color3.fromRGB(255, 170, 0), nil, true)
 		UIHandler.PlaySound("WaveComplete")
-		SkipUI:SetAttribute("InteractionContext", nil)
 		task.spawn(function()
-			TweenService:Create(SkipUI, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Position = SKIP_HIDDEN_POSITION}):Play()
+			TweenService:Create(SkipUI, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Position = UDim2.fromScale(0.5, -0.5)}):Play()
 			task.wait(0.2)
 			SkipUI.Visible = false
 		end)
@@ -2830,8 +2693,17 @@ RunService.Heartbeat:Connect(function()
 		lastValidResult = result
 		if towerToSpawn then
 			hoveredInstance = nil
-			canPlace = isPlacementResultValid(result, towerToSpawn)
-			setPlacementVFXEnabled(towerToSpawn, canPlace)
+			local parentName = result.Instance.Parent.Name
+			if parentName == "GroundPlace" or (player.Team and parentName == player.Team.Name .. "GroundPlace") then
+				setPlacementVFXEnabled(towerToSpawn, true)
+				canPlace = true
+			elseif parentName == "AirPlace" and upgradesModule[towerToSpawn.Name].Upgrades[1].Type == "Air" then
+				setPlacementVFXEnabled(towerToSpawn, true)
+				canPlace = true
+			else
+				setPlacementVFXEnabled(towerToSpawn, false)
+				canPlace = false
+			end
 			local height = towerToSpawn:WaitForChild("HumanoidRootPart").Size.Y * 1.5
 			local x = result.Position.X
 			local y = result.Position.Y + height

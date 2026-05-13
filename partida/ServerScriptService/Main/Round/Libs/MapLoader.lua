@@ -3,7 +3,6 @@ local Players = game:GetService("Players")
 local ServerStorage = game:GetService("ServerStorage")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Variables = require(ServerScriptService.Main.Round.Variables)
-local Mob = require(ServerScriptService.Main.Mob)
 local TerrainSaveLoad = require(ServerStorage.ServerModules.TerrainSaveLoad)
 local StoryModeStats = require(ReplicatedStorage.StoryModeStats)
 local Lighting = game:GetService("Lighting")
@@ -23,21 +22,6 @@ local LightingPropertyMappings = {
 local info = workspace.Info
 
 local module = {}
-
-local function syncBaseMaxHealth(humanoid)
-	if not humanoid then
-		return
-	end
-
-	local function updateMaxHealth()
-		if humanoid.Health > humanoid.MaxHealth then
-			humanoid.MaxHealth = humanoid.Health
-		end
-	end
-
-	updateMaxHealth()
-	humanoid.HealthChanged:Connect(updateMaxHealth)
-end
 
 function module.LoadMap()
 	if info.Versus.Value or info.Competitive.Value then
@@ -161,17 +145,16 @@ function module.loadCompMap()
 	ServerStorage.Maps:Destroy()
 	ServerStorage.CompetitiveMaps:Destroy()
 
-	syncBaseMaxHealth(workspace.RedBase.Humanoid)
-	syncBaseMaxHealth(workspace.BlueBase.Humanoid)
-
 	workspace.RedBase.Humanoid:GetPropertyChangedSignal('Health'):Connect(function()
 		if workspace.RedBase.Humanoid.Health <= 0 then
 			info.WinningTeam.Value = "Blue"
 			info.GameRunning.Value = false
+			Variables.win = false
 			Variables.died = true
 			info.GameOver.Value = true
 			info.Message.Value = "GAME OVER"
-			Mob.StopAll(true)
+			workspace.RedMobs:ClearAllChildren()
+			workspace.BlueMobs:ClearAllChildren()
 		end
 	end)
 
@@ -179,10 +162,12 @@ function module.loadCompMap()
 		if workspace.BlueBase.Humanoid.Health <= 0 then
 			info.WinningTeam.Value = "Red"
 			info.GameRunning.Value = false
+			Variables.win = false
 			Variables.died = true
 			info.GameOver.Value = true
 			info.Message.Value = "GAME OVER"
-			Mob.StopAll(true)
+			workspace.RedMobs:ClearAllChildren()
+			workspace.BlueMobs:ClearAllChildren()
 		end
 	end)
 
@@ -237,15 +222,14 @@ function module.loadMainMap()
 
 	newMap.Parent = workspace.Map
 
-	syncBaseMaxHealth(newMap.Base.Humanoid)
-
 	newMap.Base.Humanoid:GetPropertyChangedSignal('Health'):Connect(function()
 		if newMap.Base.Humanoid.Health <= 0 then
 			info.GameRunning.Value = false
+			Variables.win = false
 			Variables.died = true
 			info.GameOver.Value = true
 			info.Message.Value = "GAME OVER"
-			Mob.StopAll(true)
+			game.Workspace.Mobs:ClearAllChildren()
 		end
 	end)
 

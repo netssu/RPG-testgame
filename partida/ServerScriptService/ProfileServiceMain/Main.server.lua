@@ -537,7 +537,24 @@ local function main()
     end)
 
     ReplicatedStorage.Events.UpdateSetting.OnServerEvent:Connect(function(player, changeSetting, newValue)
-    	player.Settings[changeSetting].Value = newValue
+        local setting = player.Settings:FindFirstChild(changeSetting)
+        if not setting then
+            return
+        end
+
+        setting.Value = newValue
+
+        if changeSetting == "AutoSkip" and newValue == true then
+            local success, VoteSkip = pcall(function()
+                return require(game.ServerScriptService.Main.Round.RoundFunctions.VoteSkip)
+            end)
+
+            if success and VoteSkip.TryVote then
+                VoteSkip.TryVote(player, "AutoSkipSetting")
+            end
+
+            ReplicatedStorage.Events.SkipGui:FireClient(player, false)
+        end
     end)
 
     ------------------------------------------------------------------------------------------------------
@@ -597,8 +614,6 @@ local function main()
 end
 
 ErrorService.wrap(main)
-
-
 
 
 

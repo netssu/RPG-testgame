@@ -25,6 +25,20 @@ local module = {}
 local Selected = false
 print('[REWARDSLIB] ACTIVATED')
 
+local function didMainBaseFall()
+	if info.Versus.Value then
+		return false
+	end
+
+	local map = Variables.map
+	local base = map and map:FindFirstChild("Base")
+	local humanoid = base and base:FindFirstChildOfClass("Humanoid")
+
+	return humanoid and humanoid.Health <= 0
+end
+
+local roundWon = Variables.win and not Variables.died and not didMainBaseFall()
+
 for _, player in Players:GetPlayers() do
 	if info.Versus.Value then
 		require(script.Versus)(player)
@@ -37,9 +51,9 @@ for _, player in Players:GetPlayers() do
 		elseif Variables.infinity and Variables.died then
 			print('Giving inf rewards...')
 			require(script.Infinite)(player)
-		elseif Variables.challenge ~= -1 and Variables.win or Variables.challenge == 10 then
+		elseif (Variables.challenge ~= -1 or Variables.challenge == 10) and roundWon then
 			require(script.Challenge)(player)
-		elseif not Variables.infinity and Variables.challenge == -1 and Variables.win and not Selected then -- includes raid win too
+		elseif not Variables.infinity and Variables.challenge == -1 and roundWon and not Selected then -- includes raid win too
 			print('Giving story rewards...')
 			require(script.Story)(player)
 		end

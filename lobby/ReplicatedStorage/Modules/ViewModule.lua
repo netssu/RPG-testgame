@@ -5,7 +5,6 @@ local ViewModule = {}
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local GuiService = game:GetService("GuiService")
 local Rarities = require(script.Rarities)
 local UiHandler = require(game.ReplicatedStorage.Modules.Client.UIHandler)
 local TraitsModule = require(game.ReplicatedStorage.Modules.Traits)
@@ -14,11 +13,10 @@ local DeleteTakedownsAttribute = game.ReplicatedStorage.Events.DeleteTakedownsAt
 local Preloader = game:GetService("ContentProvider")
 local Anim = script.Evolution.Animation
 Preloader:PreloadAsync({Anim})
+local Debounce = false
 local SoundActive = false
 local hatching = false
 local HATCHINGGLOBAL = nil
-local debounce = false
-local SUMMON_ROTATION_SPEED = math.rad(140)
 
 local function QuartOut(LT1)
 	LT1 = LT1 / 1 - 1;
@@ -73,103 +71,110 @@ local function replicate(v)
 	end
 end
 
-local function createSummonRotationButton(name, arrowText, keyHint, position)
-	local button = Instance.new("TextButton")
-	button.Name = name
-	button.AnchorPoint = Vector2.new(0.5, 0.5)
-	button.BackgroundColor3 = Color3.fromRGB(12, 20, 44)
-	button.BackgroundTransparency = 0.2
-	button.Size = UDim2.fromOffset(72, 72)
-	button.Position = position
-	button.Text = arrowText
-	button.TextColor3 = Color3.fromRGB(255, 255, 255)
-	button.TextScaled = true
-	button.Font = Enum.Font.GothamBlack
-	button.AutoButtonColor = true
-	button.ZIndex = 50
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(1, 0)
-	corner.Parent = button
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = Color3.fromRGB(86, 193, 255)
-	stroke.Thickness = 2
-	stroke.Parent = button
-
-	local gradient = Instance.new("UIGradient")
-	gradient.Color = ColorSequence.new(
-		Color3.fromRGB(34, 72, 125),
-		Color3.fromRGB(18, 33, 62)
-	)
-	gradient.Rotation = 90
-	gradient.Parent = button
-
-	local keyLabel = Instance.new("TextLabel")
-	keyLabel.Name = "KeyHint"
-	keyLabel.AnchorPoint = Vector2.new(0.5, 1)
-	keyLabel.BackgroundTransparency = 1
-	keyLabel.Position = UDim2.new(0.5, 0, 1, -8)
-	keyLabel.Size = UDim2.new(1, -14, 0, 18)
-	keyLabel.Font = Enum.Font.GothamBold
-	keyLabel.Text = keyHint
-	keyLabel.TextColor3 = Color3.fromRGB(196, 235, 255)
-	keyLabel.TextScaled = true
-	keyLabel.ZIndex = button.ZIndex + 1
-	keyLabel.Parent = button
-
-	return button
-end
-
-local function createSummonRotationControls(parent)
-	local controls = Instance.new("Frame")
-	controls.Name = "RotationControls"
-	controls.BackgroundTransparency = 1
-	controls.Size = UDim2.fromScale(1, 1)
-	controls.ZIndex = 49
-	controls.Parent = parent
-
-	local leftButton = createSummonRotationButton(
-		"RotateLeft",
-		"<",
-		"Q",
-		UDim2.new(0.5, -225, 0.66, 0)
-	)
-	leftButton.Parent = controls
-
-	local rightButton = createSummonRotationButton(
-		"RotateRight",
-		">",
-		"E",
-		UDim2.new(0.5, 225, 0.66, 0)
-	)
-	rightButton.Parent = controls
-
-	return controls, leftButton, rightButton
-end
-
-local function isInputOverGuiObject(inputObject, guiObject)
-	if not inputObject or not guiObject then
-		return false
+local function addSummonHudTarget(targets, seen, target)
+	if not target or seen[target] then
+		return
 	end
 
-	local inputPosition = inputObject.Position
-	if typeof(inputPosition) ~= "Vector3" then
-		return false
+	if target:IsA("GuiObject") or target:IsA("ScreenGui") then
+		seen[target] = true
+		targets[#targets + 1] = target
+		return
 	end
 
-	local playerGui = game.Players.LocalPlayer:FindFirstChild("PlayerGui")
+	for _, descendant in target:GetDescendants() do
+		if descendant:IsA("GuiObject") or descendant:IsA("ScreenGui") then
+			addSummonHudTarget(targets, seen, descendant)
+		end
+	end
+end
+
+local function addNamedSummonHudTargets(targets, seen, parent, name)
+	if not parent then
+		return
+	end
+
+	for _, descendant in parent:GetDescendants() do
+		if descendant.Name == name then
+			addSummonHudTarget(targets, seen, descendant)
+		end
+	end
+end
+
+local function getSummonHudTargets()
+	local localPlayer = game.Players.LocalPlayer
+	local playerGui = localPlayer and (localPlayer:FindFirstChild("PlayerGui") or localPlayer:WaitForChild("PlayerGui", 2))
+	local targets = {}
+	local seen = {}
 	if not playerGui then
-		return false
+		return targets
 	end
 
-	for _, hoveredObject in playerGui:GetGuiObjectsAtPosition(inputPosition.X, inputPosition.Y) do
-		if hoveredObject == guiObject or hoveredObject:IsDescendantOf(guiObject) then
-			return true
+	local newUI = playerGui:FindFirstChild("NewUI")
+	if newUI then
+		addSummonHudTarget(targets, seen, newUI)
+		addNamedSummonHudTargets(targets, seen, newUI, "IngameHud")
+		addNamedSummonHudTargets(targets, seen, newUI, "ingameHud")
+		addNamedSummonHudTargets(targets, seen, newUI, "Top")
+		addNamedSummonHudTargets(targets, seen, newUI, "Bottom")
+		addNamedSummonHudTargets(targets, seen, newUI, "Slot")
+		addNamedSummonHudTargets(targets, seen, newUI, "Slots")
+		addNamedSummonHudTargets(targets, seen, newUI, "LevelBar")
+		addNamedSummonHudTargets(targets, seen, newUI, "AmountMoney")
+	end
+
+	local gameGui = playerGui:FindFirstChild("GameGui") or playerGui:WaitForChild("GameGui", 2)
+	if gameGui then
+		addSummonHudTarget(targets, seen, gameGui)
+		addNamedSummonHudTargets(targets, seen, gameGui, "Slots")
+		addNamedSummonHudTargets(targets, seen, gameGui, "Level")
+		addNamedSummonHudTargets(targets, seen, gameGui, "Currency")
+		addNamedSummonHudTargets(targets, seen, gameGui, "Currecny")
+	end
+
+	addSummonHudTarget(targets, seen, playerGui:FindFirstChild("Ingame_HUD"))
+	addSummonHudTarget(targets, seen, playerGui:FindFirstChild("StatsHUD"))
+
+	return targets
+end
+
+local function hideIngameHudForSummon(isFromSummon)
+	if not isFromSummon then
+		return nil
+	end
+
+	local states = {}
+	for _, hud in getSummonHudTargets() do
+		if hud:IsA("GuiObject") then
+			states[#states + 1] = {
+				instance = hud,
+				wasVisible = hud.Visible,
+			}
+			hud.Visible = false
+		elseif hud:IsA("ScreenGui") then
+			states[#states + 1] = {
+				instance = hud,
+				wasEnabled = hud.Enabled,
+			}
+			hud.Enabled = false
 		end
 	end
 
-	return false
+	if #states <= 0 then
+		return nil
+	end
+
+	return function()
+		for _, state in states do
+			if state.instance.Parent then
+				if state.wasVisible ~= nil then
+					state.instance.Visible = state.wasVisible
+				elseif state.wasEnabled ~= nil then
+					state.instance.Enabled = state.wasEnabled
+				end
+			end
+		end
+	end
 end
 
 function ViewModule.EvolveHatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
@@ -187,6 +192,7 @@ function ViewModule.EvolveHatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 	local UnitsTakedowns = PlayerUnit:GetAttribute("Takedowns")
 	local HatchShiny = HatchUi:WaitForChild("Shiny")
 	HatchUi.Parent = 	game.Players.LocalPlayer.PlayerGui
+	local restoreIngameHud = hideIngameHudForSummon(isFromSummon)
 
 	UiHandler.DisableAllButtons()
 
@@ -216,9 +222,6 @@ function ViewModule.EvolveHatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 		UnitData = UnitInfo
 		Rarity = UnitInfo.Rarity;
 	end;
-
-	print(UnitData)
-
 	UnitData.OffSet = CFrame.new(0,0,0)
 	local CurrentCamera = game.Workspace.CurrentCamera;
 	local Rand = Random.new();
@@ -376,12 +379,6 @@ function ViewModule.EvolveHatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 		HatchCenter.UnitName.Text = UnitInfo.Name
 		HatchCenter.Rarity.Text = UnitInfo.Rarity
 		HatchCenter.Rarity.UIGradient.Color = TraitsModule["TraitColors"][UnitInfo.Rarity].Gradient
-
-		if UserInputService.GamepadEnabled then
-			HatchCenter.Skip.Visible = false
-			HatchCenter.Controller.Visible = true
-		end
-
 		task.spawn(function()
 			local gradients = {
 				HatchCenter.Rarity.UIGradient
@@ -445,8 +442,6 @@ function ViewModule.EvolveHatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 				HatchCenter.Trait.Icon.Position = UDim2.new(0.5 - (0.025 * #Trait),0,0.5,0)
 			end
 
-			print(Trait)
-
 			HatchCenter.Trait.UIGradient.Color = TraitsModule["TraitColors"][TraitsModule["Traits"][Trait].Rarity].Gradient
 			HatchCenter.Trait.Icon.Image = TraitsModule["Traits"][Trait].ImageID
 			HatchCenter.Trait.Icon.UIGradient.Color = TraitsModule["TraitColors"][TraitsModule["Traits"][Trait].Rarity].Gradient
@@ -461,7 +456,7 @@ function ViewModule.EvolveHatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 					valid = false
 					for _,grad in gradients do
 						if HatchCenter:FindFirstChild("Trait") then
-							if HatchCenter.Trait.Text == "Cosmic Crusader" then
+							if HatchCenter.Trait.Text == "Cosmic Crusader" or HatchCenter.Trait.Text == "Waders Will" then
 								local t = 2.8
 								local range = 7
 								grad.Rotation = 0
@@ -570,9 +565,9 @@ function ViewModule.EvolveHatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 	task.delay(WaitTime,function()
 		MainParticle.Parent = workspace.Ignore;
 	end)
-
+	
 	local EvolveEmit = nil
-
+	
 	for _, Particle in MainParticle:GetDescendants() do
 		if Particle:IsA("ParticleEmitter") then
 			if Rarity ~= nil then
@@ -598,7 +593,7 @@ function ViewModule.EvolveHatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 		VFXHelper.EmitWithDelay(EvolveEmit)
 		local originalCameraCFrame = CurrentCamera.CFrame
 		local OCSLOCK = os.clock();
-
+		
 		while LoopTrue2 do
 			FinalTimer = os.clock() - WaitTimer
 			for Index, PartThing in Rand4 do
@@ -616,19 +611,15 @@ function ViewModule.EvolveHatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 	local ClickLoop = nil;
 	ClickLoop = UserInputService.InputBegan:Connect(function(Input)
 		if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
-			if debounce then return end
-			print("click")
 
 			ClickLoop:Disconnect();
 			ClickLoop = nil;
 			LoopTrue2 = false;
 			LoopTrue = false;
 			local OSCLOCK = os.clock();
-
-			if ViewModule.infotween_out then ViewModule.infotween_out:Play() else warn("Viewmodule.infotween_out doesn't exist") end
-			if ViewModule.infotween_out2 then ViewModule.infotween_out2:Play() warn("Viewmodule.infotween_out2 doesn't exist") end
-			if ViewModule.infotween_out3 then ViewModule.infotween_out3:Play() warn("Viewmodule.infotween_out3 doesn't exist") end
-
+			ViewModule.infotween_out:Play()
+			ViewModule.infotween_out2:Play()
+			ViewModule.infotween_out3:Play()
 			while true do
 				local Clock = math.clamp((os.clock() - OSCLOCK) / 0.5, 0, 1);
 				local Easing3 = BackIn(Clock);
@@ -682,6 +673,9 @@ function ViewModule.EvolveHatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 				Object:Destroy();
 			end;
 
+			if restoreIngameHud then
+				restoreIngameHud()
+			end
 			if not isFromSummon then
 				task.spawn(UiHandler.EnableAllButtons)
 				--ENALBE THE UI HERE--Knit.Get("Module", "GuiUtil"):RenableAllWindows()
@@ -695,12 +689,11 @@ function ViewModule.EvolveHatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 end;
 
 function ViewModule.Hatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
+	warn(Info)
 	local UnitInfo = Info[1]
 	local PlayerUnit = Info[2]
 	local _resumeCallback = Info[3]
 	local isFromSummon = Info[4]
-	local AutoSummon = Info[5]
-
 	local GetUnitModel = require(game.ReplicatedStorage.Modules.GetUnitModel)
 	local Unit = if PlayerUnit:GetAttribute("Shiny") then GetUnitModel[PlayerUnit.Name] else GetUnitModel[PlayerUnit.Name]
 	local HatchUi : ScreenGui = script.HatchInfo:Clone() --Point to the ui here--Knit.Get("Module", "GuiUtil").GetUI("HatchInfo"):Clone()
@@ -710,127 +703,16 @@ function ViewModule.Hatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 	local UnitsTakedowns = PlayerUnit:GetAttribute("Takedowns")
 	local HatchShiny = HatchUi:WaitForChild("Shiny")
 	HatchUi.Parent = 	game.Players.LocalPlayer.PlayerGui
-
-	local summonRotationOffset = 0
-	local rotationControls
-	local rotationInputBeganConnection
-	local rotationInputEndedConnection
-	local rotationButtonConnections = {}
-	local rotateLeftByKey = false
-	local rotateRightByKey = false
-	local rotateLeftByButton = false
-	local rotateRightByButton = false
-
-	local function applySummonRotation(baseAngle)
-		return CFrame.Angles(0, baseAngle + summonRotationOffset, 0)
-	end
-
-	local function updateSummonRotation(deltaTime)
-		if not isFromSummon then
-			return
-		end
-
-		local rotationDirection = 0
-		if rotateLeftByKey or rotateLeftByButton then
-			rotationDirection -= 1
-		end
-		if rotateRightByKey or rotateRightByButton then
-			rotationDirection += 1
-		end
-
-		if rotationDirection ~= 0 then
-			summonRotationOffset += SUMMON_ROTATION_SPEED * rotationDirection * deltaTime
-		end
-	end
-
-	local function cleanupRotationControls()
-		if rotationInputBeganConnection then
-			rotationInputBeganConnection:Disconnect()
-			rotationInputBeganConnection = nil
-		end
-
-		if rotationInputEndedConnection then
-			rotationInputEndedConnection:Disconnect()
-			rotationInputEndedConnection = nil
-		end
-
-		for _, connection in rotationButtonConnections do
-			connection:Disconnect()
-		end
-		table.clear(rotationButtonConnections)
-
-		if rotationControls then
-			rotationControls:Destroy()
-			rotationControls = nil
-		end
-	end
-
-	local function setRotationButtonHeld(direction, isHeld)
-		if direction < 0 then
-			rotateLeftByButton = isHeld
-		else
-			rotateRightByButton = isHeld
-		end
-	end
-
-	if isFromSummon then
-		local leftButton
-		local rightButton
-		rotationControls, leftButton, rightButton = createSummonRotationControls(HatchUi)
-
-		table.insert(rotationButtonConnections, leftButton.InputBegan:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				setRotationButtonHeld(-1, true)
-			end
-		end))
-		table.insert(rotationButtonConnections, leftButton.InputEnded:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				setRotationButtonHeld(-1, false)
-			end
-		end))
-		table.insert(rotationButtonConnections, rightButton.InputBegan:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				setRotationButtonHeld(1, true)
-			end
-		end))
-		table.insert(rotationButtonConnections, rightButton.InputEnded:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				setRotationButtonHeld(1, false)
-			end
-		end))
-
-		rotationInputBeganConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-			if gameProcessed then
-				return
-			end
-
-			if input.KeyCode == Enum.KeyCode.Q then
-				rotateLeftByKey = true
-			elseif input.KeyCode == Enum.KeyCode.E then
-				rotateRightByKey = true
-			end
-		end)
-
-		rotationInputEndedConnection = UserInputService.InputEnded:Connect(function(input)
-			if input.KeyCode == Enum.KeyCode.Q then
-				rotateLeftByKey = false
-			elseif input.KeyCode == Enum.KeyCode.E then
-				rotateRightByKey = false
-			elseif input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				rotateLeftByButton = false
-				rotateRightByButton = false
-			end
-		end)
-	end
+	local restoreIngameHud = hideIngameHudForSummon(isFromSummon)
 
 	-- CLOSE ALL OF THE UI HERE --Knit.Get("Module", "GuiUtil"):CloseAllWindows(" ", true)
-
+	
 	UiHandler.DisableAllButtons()
-
+	
 	game.Players.LocalPlayer.CameraMinZoomDistance = 10;
-	if game.Lighting.UIBlur.Size > 0 then
-		TweenService:Create(game.Lighting.UIBlur, TweenInfo.new(.3), {Size = 4}):Play()
-	end
+	--if game.Lighting.UIBlur.Size > 0 then
+	--	TweenService:Create(game.Lighting.UIBlur, TweenInfo.new(.3), {Size = 4}):Play()
+	--end
 	local Info = nil;
 	local ItemInfo = nil;
 	local Rarity  = nil;
@@ -1093,12 +975,6 @@ function ViewModule.Hatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 			HatchCenter.UnitName.Text = UnitInfo.Name
 			HatchCenter.Rarity.Text = UnitInfo.Rarity
 			HatchCenter.Rarity.UIGradient.Color = TraitsModule["TraitColors"][UnitInfo.Rarity].Gradient
-
-			if UserInputService.GamepadEnabled then
-				HatchCenter.Skip.Visible = false
-				HatchCenter.Controller.Visible = true
-			end
-
 			task.spawn(function()
 				local gradients = {
 					HatchCenter.Rarity.UIGradient
@@ -1425,17 +1301,13 @@ function ViewModule.Hatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 
 
 			local num = 0
-			local lastRotationTick = os.clock()
 			while LoopTrue do
-				local now = os.clock()
-				updateSummonRotation(now - lastRotationTick)
-				lastRotationTick = now
 				replicate(Model)
 				local Clamp = math.clamp((os.clock() - OSCLOCK) / 1, 0, 1);
 				local Easing1 = QuartOut(Clamp, "Quart", "Out");
 				local Easing2 = ElasticOut(math.clamp((os.clock() - OSCLOCK) / 1, 0, 1), "Elastic", "Out");
 				for Index, OBJJ in Rand4 do
-					local Camoffset = CurrentCamera.CFrame * CFrame.new(0, 0, -7.35 + 3.9999999999999996 * Easing2) * Rand5[Index] * applySummonRotation(math.rad(Easing1 * 360) + 3.141592653589793);
+					local Camoffset = CurrentCamera.CFrame * CFrame.new(0, 0, -7.35 + 3.9999999999999996 * Easing2) * Rand5[Index] * CFrame.Angles(0, math.rad(Easing1 * 360), 0) * CFrame.Angles(0, 3.141592653589793, 0);
 					OBJJ:PivotTo(Camoffset * CFOF);
 					if num == 0 then
 						num += 1
@@ -1455,14 +1327,10 @@ function ViewModule.Hatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 			LoopTrue3 = true;
 			local OCSLOCK = os.clock();
 			local DIVIDENUM = 1.5;
-			lastRotationTick = os.clock()
 			while LoopTrue2 do
-				local now = os.clock()
-				updateSummonRotation(now - lastRotationTick)
-				lastRotationTick = now
 				replicate(Model)
 				for Index, PartThing in Rand4 do
-					local NewCamOff = CurrentCamera.CFrame * CFrame.new(0, 0, -3.35) * Rand5[Index] * applySummonRotation(3.141592653589793);
+					local NewCamOff = CurrentCamera.CFrame * CFrame.new(0, 0, -3.35) * Rand5[Index] * CFrame.Angles(0, 3.141592653589793, 0);
 					PartThing:PivotTo(NewCamOff * CFOF);
 					MainParticle.CFrame = NewCamOff * CFrame.new(-1.52587891E-05, -0.00043296814, 0.265960693, 1, 8.98941107E-06, 4.2619572E-06, -8.98976123E-06, 1, 8.23723967E-05, -4.26121642E-06, -8.23724331E-05, 1);
 				end;
@@ -1472,110 +1340,81 @@ function ViewModule.Hatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 
 		end)();
 
-		local ClickLoop = nil
-		local function continue()
-			if ClickLoop then
-				ClickLoop:Disconnect()
-				ClickLoop = nil
-			end
-
-			cleanupRotationControls()
-
-			LoopTrue2 = false;
-			LoopTrue = false;
-			local OSCLOCK = os.clock();
-			ViewModule.infotween_out:Play()
-			ViewModule.infotween_out2:Play()
-			ViewModule.infotween_out3:Play()
-
-			while true do
-				local Clock = math.clamp((os.clock() - OSCLOCK) / 0.5, 0, 1);
-				local Easing3 = BackIn(Clock);
-				for Index, PartFound in Rand4 do
-					local CFOFFS = CurrentCamera.CFrame * CFrame.new(0, 0, -3.35) * Rand5[Rand6 - 1] * CFrame.new(0, Easing3 * -5, 0) * applySummonRotation(3.141592653589793);
-					PartFound:PivotTo(CFOFFS * CFOF);
-					for _, ExtraPaer in MainParticle:GetDescendants() do
-						if ExtraPaer:IsA("ParticleEmitter") then
-							ExtraPaer.Enabled = false;
+		local ClickLoop = nil;
+		ClickLoop = UserInputService.InputBegan:Connect(function(Input)
+			if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+				ClickLoop:Disconnect();
+				ClickLoop = nil;
+				LoopTrue2 = false;
+				LoopTrue = false;
+				local OSCLOCK = os.clock();
+				ViewModule.infotween_out:Play()
+				ViewModule.infotween_out2:Play()
+				ViewModule.infotween_out3:Play()
+				while true do
+					local Clock = math.clamp((os.clock() - OSCLOCK) / 0.5, 0, 1);
+					local Easing3 = BackIn(Clock);
+					for Index, PartFound in Rand4 do
+						local CFOFFS = CurrentCamera.CFrame * CFrame.new(0, 0, -3.35) * Rand5[Rand6 - 1] * CFrame.new(0, Easing3 * -5, 0) * CFrame.Angles(0, 3.141592653589793, 0);
+						PartFound:PivotTo(CFOFFS * CFOF);
+						for _, ExtraPaer in MainParticle:GetDescendants() do
+							if ExtraPaer:IsA("ParticleEmitter") then
+								ExtraPaer.Enabled = false;
+							end;
 						end;
+						MainParticle.CFrame = CFOFFS * CFrame.new(-1.52587891E-05, -0.00043296814, 0.265960693, 1, 8.98941107E-06, 4.2619572E-06, -8.98976123E-06, 1, 8.23723967E-05, -4.26121642E-06, -8.23724331E-05, 1);
 					end;
-					MainParticle.CFrame = CFOFFS * CFrame.new(-1.52587891E-05, -0.00043296814, 0.265960693, 1, 8.98941107E-06, 4.2619572E-06, -8.98976123E-06, 1, 8.23723967E-05, -4.26121642E-06, -8.23724331E-05, 1);
+					DepthOfFieldEffect.FarIntensity = 1 - Clock;
+					RunService.RenderStepped:Wait();
+					if Clock >= 1 then
+
+						break;
+					end;				
 				end;
-				DepthOfFieldEffect.FarIntensity = 1 - Clock;
-				RunService.RenderStepped:Wait();
-				if Clock >= 1 then
-					break;
-				end;				
-			end;
-
-			if ViewModule.infotween_out.PlaybackState == Enum.PlaybackState.Completed then
-				HatchUi:Destroy()
-			else
-				local outTween; outTween = ViewModule.infotween_out.Completed:Connect(function()
+				--if sound then
+				--	sound:Pause()
+				--	sound:Destroy()
+				--	end
+				if ViewModule.infotween_out.PlaybackState == Enum.PlaybackState.Completed then
 					HatchUi:Destroy()
-					outTween:Disconnect()
-				end)
-			end
+				else
+					local outTween; outTween = ViewModule.infotween_out.Completed:Connect(function()
+						HatchUi:Destroy()
+						outTween:Disconnect()
+					end)
+				end
 
-			if ViewModule.infotween_out2.PlaybackState == Enum.PlaybackState.Completed then
-				HatchUi:Destroy()
-			else
-				local outTween; outTween = ViewModule.infotween_out2.Completed:Connect(function()
+				if ViewModule.infotween_out2.PlaybackState == Enum.PlaybackState.Completed then
 					HatchUi:Destroy()
-					outTween:Disconnect()
-				end)
-			end
+				else
+					local outTween; outTween = ViewModule.infotween_out2.Completed:Connect(function()
+						HatchUi:Destroy()
+						outTween:Disconnect()
+					end)
+				end
 
-			DepthOfFieldEffect:Destroy();
-			MainParticle:Destroy();
-			for _, tHING in Rand4 do
-				tHING:Destroy();
+				DepthOfFieldEffect:Destroy();
+				MainParticle:Destroy();
+				for _, tHING in Rand4 do
+					tHING:Destroy();
+				end;
+				game.Players.LocalPlayer.CameraMinZoomDistance = 0.5;
+				for _, Object in Rand4 do
+					Object:Destroy();
+				end;
+
+				if restoreIngameHud then
+					restoreIngameHud()
+				end
+				if not isFromSummon then
+					task.spawn(UiHandler.EnableAllButtons)
+					--ENALBE THE UI HERE--Knit.Get("Module", "GuiUtil"):RenableAllWindows()
+				end
+				if _resumeCallback then
+					_resumeCallback()
+				end
 			end;
-			game.Players.LocalPlayer.CameraMinZoomDistance = 0.5;
-			for _, Object in Rand4 do
-				Object:Destroy();
-			end;
-
-			if not isFromSummon then
-				task.spawn(UiHandler.EnableAllButtons)
-				--ENALBE THE UI HERE--Knit.Get("Module", "GuiUtil"):RenableAllWindows()
-			end
-			if _resumeCallback then
-				_resumeCallback()
-			end
-		end
-
-		if AutoSummon then
-			task.delay(1, continue)
-			return
-		end
-
-		local cooldown = 0.5
-
-		ClickLoop = UserInputService.InputBegan:Connect(function(Input, gameProcessed)
-			if debounce then return end
-
-			if rotationControls and (
-				Input.UserInputType == Enum.UserInputType.MouseButton1 or
-					Input.UserInputType == Enum.UserInputType.Touch
-				) and isInputOverGuiObject(Input, rotationControls) then
-				return
-			end
-
-			local isClick =
-				Input.UserInputType == Enum.UserInputType.MouseButton1 or
-				Input.UserInputType == Enum.UserInputType.Touch or
-				Input.KeyCode == Enum.KeyCode.ButtonX
-
-			if isClick then
-				debounce = true
-				continue()
-				task.delay(cooldown, function()
-					debounce = false
-				end)
-			end
-		end)
-
+		end);
 	elseif Hatching.Hatching then
 		local CustomColor = Hatching.HatchColor
 		local StarPar
@@ -1759,29 +1598,23 @@ local function ColorMove(Part)
 		end
 	end
 end
-
 function ViewModule.Item(Info)
+
 	local ItemInfo = Info[1] --{Name}
 	local PlayerItem = Info[2]
 	local _resumeCallback = Info[3]
 	local isFromSummon = Info[4]
-
-	local TraitPointFromSummon = false
-	if string.find(tostring(Info[3]),"function") then
-		TraitPointFromSummon = true
-	end
-	local GetItem = require(game.ReplicatedStorage.Modules.GetItemModel)
-	local amount = if TraitPointFromSummon then tostring(Info[4]) else tostring(Info[3])
-	local Item = GetItem[ItemInfo.Name]
+	local GetItemModel = require(game.ReplicatedStorage.Modules.GetItemModel)
+	local Item = GetItemModel[ItemInfo.Name]
 	local HatchUi : ScreenGui = script.HatchInfo:Clone() --Point to the ui here--Knit.Get("Module", "GuiUtil").GetUI("HatchInfo"):Clone()
 	local HatchCenter = HatchUi:WaitForChild("Center")
 	local HatchBottom = HatchUi:WaitForChild("Bottom")
 	HatchUi.Parent = 	game.Players.LocalPlayer.PlayerGui
-
+	local restoreIngameHud = hideIngameHudForSummon(isFromSummon)
 
 	-- CLOSE ALL OF THE UI HERE --Knit.Get("Module", "GuiUtil"):CloseAllWindows(" ", true)
-	UiHandler.DisableAllButtons()
-	_G.CloseAll()
+	--UiHandler.DisableAllButtons()
+	--_G.CloseAll()
 
 	game.Players.LocalPlayer.CameraMinZoomDistance = 10;
 	local Info = nil;
@@ -1812,16 +1645,6 @@ function ViewModule.Item(Info)
 	local Rand5 = {};
 	local Rand6 = 1;
 
-	local light = Instance.new("Part")
-	light.Transparency = 1
-	light.Anchored = true
-	light.CanCollide = false
-	local spotlight = Instance.new("SpotLight")
-	spotlight.Range = 6
-	spotlight.Brightness = .5
-	spotlight.Parent = light
-	light.Parent = CurrentCamera
-
 	while Rand6 <= 1 do
 		local Rand7 = ItemInfo;
 		if Item then
@@ -1837,8 +1660,7 @@ function ViewModule.Item(Info)
 			task.spawn(function()
 				local Wrap
 				Wrap = RunService.RenderStepped:Connect(function()
-					light.CFrame = CurrentCamera.CFrame
-					if UnitModel == nil or  UnitModel.Parent == nil then Wrap:Disconnect() light:Destroy() end
+					if UnitModel == nil or  UnitModel.Parent == nil then Wrap:Disconnect() end
 					for _, Part in (UnitModel:GetDescendants()) do
 						if Part:IsA("BasePart") then
 							if Part.Name == "HumanoidRootPart" and Anchor then
@@ -1937,15 +1759,9 @@ function ViewModule.Item(Info)
 		Name = ItemInfo.name .. " (x" .. tostring(ItemInfo.amount or 1) .. ")";
 	end;
 	if ItemInfo then
-		HatchCenter.UnitName.Text = ItemInfo.Name .. " (x"..amount..")"
+		HatchCenter.UnitName.Text = ItemInfo.Name
 		HatchCenter.Rarity.Text = ItemInfo.Rarity
 		HatchCenter.Rarity.UIGradient.Color = TraitsModule["TraitColors"][ItemInfo.Rarity].Gradient
-
-		if UserInputService.GamepadEnabled then
-			HatchCenter.Skip.Visible = false
-			HatchCenter.Controller.Visible = true
-		end
-
 		task.spawn(function()
 			local gradients = {
 				HatchCenter.Rarity.UIGradient
@@ -1957,7 +1773,7 @@ function ViewModule.Item(Info)
 					if Rarity == "Mythical" then
 						local t = 2.8
 						local range = 7
-						grad.Rotation = 0
+						grad.Rotation = -83
 						local loop = tick() % t / t
 						local colors = {}
 						for i = 1, range + 1, 1 do
@@ -2226,11 +2042,14 @@ function ViewModule.Item(Info)
 				Object:Destroy();
 			end;
 
-			if type(isFromSummon) ~= "string" or not isFromSummon then
+			if restoreIngameHud then
+				restoreIngameHud()
+			end
+			if not isFromSummon then
 				task.spawn(UiHandler.EnableAllButtons)
 				--ENALBE THE UI HERE--Knit.Get("Module", "GuiUtil"):RenableAllWindows()
 			end
-			if _resumeCallback and TraitPointFromSummon then
+			if _resumeCallback then
 				_resumeCallback()
 			end
 		end;

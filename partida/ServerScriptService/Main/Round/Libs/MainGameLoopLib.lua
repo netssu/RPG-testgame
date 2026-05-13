@@ -6,6 +6,7 @@ local Players = game:GetService("Players")
 local Variables = require(script.Parent.Parent.Variables)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local mob = require(ServerScriptService.Main.Mob)
+local VoteSkip = require(script.Parent.Parent.RoundFunctions.VoteSkip)
 local QuestHandler = require(game.ServerStorage.ServerModules.QuestHandler)
 local info = workspace.Info
 local QuestConfig = require(ReplicatedStorage.Configs.QuestConfig)
@@ -22,6 +23,22 @@ local module = {}
 
 local EnemySpawnChances = Variables.RoundStats.EnemySpawnChances
 
+local function didMainBaseFall()
+	if info.Versus.Value then
+		return false
+	end
+
+	local map = Variables.map
+	local base = map and map:FindFirstChild("Base")
+	local humanoid = base and base:FindFirstChildOfClass("Humanoid")
+
+	return humanoid and humanoid.Health <= 0
+end
+
+local function canMarkWin()
+	return not Variables.died and not info.GameOver.Value and not didMainBaseFall()
+end
+
 local function getActiveMobCount()
 	if info.Versus.Value then
 		local redMobs = workspace:FindFirstChild("RedMobs")
@@ -33,29 +50,46 @@ local function getActiveMobCount()
 	return mobsFolder and #mobsFolder:GetChildren() or 0
 end
 
-local function getSkipMobLimit()
-	return if info.Versus.Value then Variables.mobLimit * 2 else Variables.mobLimit
-end
-
 local function canOpenSkipVote()
-	return getActiveMobCount() <= getSkipMobLimit()
+	local limit = Variables.mobLimit
+	if info.Versus.Value then
+		limit *= 2
+	end
+
+	return getActiveMobCount() <= limit
 end
 
-local function debugSkipState(message)
-	if RunService:IsStudio() then
-		local mobCount = getActiveMobCount()
-
-		warn(string.format(
-			"[SkipDebug][Round %s/%s] %s | skip=%s open=%s votes=%s mobs=%s",
-			tostring(Variables.CurrentRound),
-			tostring(Variables.MaxWave),
-			message,
-			tostring(Variables.Skip),
-			tostring(Variables.SkipVoteOpen),
-			tostring(Variables.SkipVotes),
-			tostring(mobCount)
-			))
+local function fireSkipPrompt(visible, payload)
+	for _, player in Players:GetPlayers() do
+		if visible and VoteSkip.HasAutoSkipEnabled(player) then
+			ReplicatedStorage.Events.SkipGui:FireClient(player, false)
+		else
+			ReplicatedStorage.Events.SkipGui:FireClient(player, visible, payload)
+		end
 	end
+end
+
+local function openSkipVote()
+	if Variables.CurrentRound >= Variables.MaxWave then
+		return false
+	end
+
+	if Variables.SkipVoteOpen or Variables.SkipVoteOpenedRound == Variables.CurrentRound then
+		return false
+	end
+
+	if not canOpenSkipVote() then
+		return false
+	end
+
+	Variables.SkipVoteOpen = true
+	Variables.SkipVoteOpenedRound = Variables.CurrentRound
+	fireSkipPrompt(true, {
+		Required = true
+	})
+	VoteSkip.TryAutoVotes()
+
+	return true
 end
 
 repeat
@@ -148,7 +182,9 @@ repeat
 			break
 		else
 			Warning:FireAllClients('[ROUND MODULE] xo1, uh oh this shouldnt be happening')
-			Variables.win = true
+			if canMarkWin() then
+				Variables.win = true
+			end
 			break
 		end
 	elseif not round and Variables.infinity then
@@ -234,6 +270,12 @@ repeat
 		Variables.healthMultiplier += (Variables.CurrentRound^1.5)/577.8 
 	end
 
+	Variables.Skip = false
+	Variables.SkipVotes = 0
+	Variables.SkipVoteOpen = false
+	Variables.SkipVoteOpenedRound = 0
+	table.clear(Variables.Players)
+
 	info.Wave.Value = Variables.CurrentRound
 	info.Message.Value = ""
 
@@ -314,7 +356,7 @@ repeat
 	if isBoss then
 		repeat task.wait() until bossDead
 
-		if not workspace.Info.GameOver.Value then
+		if canMarkWin() then
 			Variables.win = true
 		end
 
@@ -324,20 +366,7 @@ repeat
 	if Variables.died then break end
 
 	if Variables.CurrentRound < Variables.MaxWave then
-		Variables.Skip = false
-		Variables.SkipVotes = 0
-		table.clear(Variables.Players)
-		Variables.SkipVoteOpen = false
-
-		if canOpenSkipVote() then
-			Variables.SkipVoteOpen = true
-			debugSkipState("Opened skip vote window")
-			ReplicatedStorage.Events.SkipGui:FireAllClients(true, { 
-				Required = true
-			})
-		else
-			debugSkipState("Waiting to open skip vote window because there are too many mobs")
-		end
+		openSkipVote()
 	end
 
 	local roundEnd = false
@@ -346,18 +375,13 @@ repeat
 	repeat
 		task.wait(0.5)
 		if Variables.Skip == true and Variables.CurrentRound < Variables.MaxWave then
-			debugSkipState("Breaking round wait because skip was approved")
 			Variables.Skip = false
 			Variables.SkipVoteOpen = false
 			break
 		end
 
-		if not Variables.SkipVoteOpen and Variables.CurrentRound < Variables.MaxWave and canOpenSkipVote() then
-			Variables.SkipVoteOpen = true
-			debugSkipState("Opened skip vote window after mob count dropped")
-			ReplicatedStorage.Events.SkipGui:FireAllClients(true, { 
-				Required = true
-			})
+		if not Variables.SkipVoteOpen and Variables.CurrentRound < Variables.MaxWave then
+			openSkipVote()
 		end
 
 		count += 1
@@ -380,7 +404,6 @@ repeat
 		end
 	until roundEnd
 	Variables.SkipVoteOpen = false
-	debugSkipState("Closed skip vote window")
 	ReplicatedStorage.Events.SkipGui:FireAllClients(false)
 
 

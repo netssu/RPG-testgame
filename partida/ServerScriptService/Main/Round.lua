@@ -46,9 +46,6 @@ local wait = task.wait
 
 local votes = {}
 
-local win = false
-local died = false
-
 --local ramping = 1
 local healthMultiplier = 1
 local skipvotes = 0
@@ -72,6 +69,18 @@ local function repeatSubtract(number, sub)
 		r -= sub
 	end
 	return r
+end
+
+local function didMainBaseFall()
+	if info.Versus.Value or info.Competitive.Value then
+		return false
+	end
+
+	local map = Variables.map
+	local base = map and map:FindFirstChild("Base")
+	local humanoid = base and base:FindFirstChildOfClass("Humanoid")
+
+	return humanoid and humanoid.Health <= 0
 end
 
 local function forceTeleportPlayer(v)
@@ -98,6 +107,11 @@ end
 function round.StartGame(host)
 	if info.GameRunning.Value == true then return end
 
+	Variables.win = false
+	Variables.died = false
+	info.Victory.Value = false
+	info.GameOver.Value = false
+	info.Message.Value = ""
 
 
 	Variables.map = MapLoader.LoadMap()
@@ -336,6 +350,13 @@ function round.StartGame(host)
 
 		require(script.Libs.MainGameLoopLib)
 		-- Game Ended, Load Rewards
+		local playerBaseDestroyed = didMainBaseFall()
+		if playerBaseDestroyed then
+			Variables.win = false
+			Variables.died = true
+			info.Victory.Value = false
+		end
+
 		require(script.Libs.RewardsLib)
 
 		local function handleRewards()
@@ -367,11 +388,12 @@ function round.StartGame(host)
 			end
 		end
 
-		if not died or info.Event.Value then
+		local roundWon = Variables.win and not Variables.died and not playerBaseDestroyed
+
+		if roundWon then
 			info.Victory.Value = true
 			info.GameOver.Value = true
 			info.Message.Value = "VICTORY"
-			mob.StopAll(true)
 
 
 
@@ -395,6 +417,9 @@ function round.StartGame(host)
 			handleRewards()
 		else
 			print('We lost :(')
+			info.Victory.Value = false
+			info.GameOver.Value = true
+			info.Message.Value = "GAME OVER"
 
 			for i,v in Players:GetChildren() do
 				v.TutorialWin.Value = true

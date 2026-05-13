@@ -6,6 +6,14 @@ local Events = ReplicatedStorage.Events
 local info = workspace.Info
 
 local module = {}
+local AUTO_SKIP_RETRY_DELAYS = {0.1, 0.35, 0.75, 1.5}
+
+local function hasAutoSkipEnabled(player)
+	local settings = player:FindFirstChild("Settings")
+	local autoSkip = settings and settings:FindFirstChild("AutoSkip")
+	return autoSkip and autoSkip.Value == true
+end
+
 local function debugSkip(message, source)
 	if RunService:IsStudio() then
 		warn(string.format(
@@ -18,11 +26,21 @@ local function debugSkip(message, source)
 			tostring(Variables.SkipVoteOpen),
 			tostring(Variables.SkipVotes),
 			tostring(#Players:GetPlayers())
-			))
+		))
 	end
 end
 
-ReplicatedStorage.Functions.VoteForSkip.OnServerInvoke = function(player, source)
+local function tryAutoVoteForPlayer(player, source)
+	if Variables.SkipVoteOpen and hasAutoSkipEnabled(player) then
+		module.TryVote(player, source)
+	end
+end
+
+function module.HasAutoSkipEnabled(player)
+	return hasAutoSkipEnabled(player)
+end
+
+function module.TryVote(player, source)
 	if not Variables.SkipVoteOpen then
 		debugSkip("Ignored vote from " .. player.Name .. " because the vote window is closed", source)
 		return false
@@ -51,7 +69,7 @@ ReplicatedStorage.Functions.VoteForSkip.OnServerInvoke = function(player, source
 		Variables.Players[player.Name] = true
 		debugSkip("Accepted vote from " .. player.Name, source)
 
-		ReplicatedStorage.Events.SkipGui:FireAllClients(nil, { 
+		ReplicatedStorage.Events.SkipGui:FireAllClients(nil, {
 			Yes = Variables.SkipVotes,
 
 		})
@@ -65,12 +83,88 @@ ReplicatedStorage.Functions.VoteForSkip.OnServerInvoke = function(player, source
 	end
 
 	debugSkip("Ignored duplicate vote from " .. player.Name, source)
+	return false
+end
+
+function module.TryAutoVotes(allowRetry)
+	if not Variables.SkipVoteOpen then
+		return
+	end
+
+	for _, player in Players:GetPlayers() do
+		if hasAutoSkipEnabled(player) then
+			tryAutoVoteForPlayer(player, "AutoSkip")
+		end
+	end
+
+	if allowRetry == false then
+		return
+	end
+
+	local retryRound = Variables.CurrentRound
+	for _, delayTime in AUTO_SKIP_RETRY_DELAYS do
+		task.delay(delayTime, function()
+			if Variables.CurrentRound ~= retryRound or not Variables.SkipVoteOpen or Variables.Skip then
+				return
+			end
+
+			module.TryAutoVotes(false)
+		end)
+	end
+end
+
+local function bindAutoSkipSetting(player)
+	local function bindSettings(settings)
+		local function bindAutoSkip(autoSkip)
+			if not autoSkip or autoSkip:GetAttribute("AutoSkipVoteBound") then
+				return
+			end
+
+			autoSkip:SetAttribute("AutoSkipVoteBound", true)
+			tryAutoVoteForPlayer(player, "AutoSkipLoaded")
+
+			autoSkip.Changed:Connect(function()
+				if autoSkip.Value == true then
+					tryAutoVoteForPlayer(player, "AutoSkipChanged")
+				end
+			end)
+		end
+
+		bindAutoSkip(settings:FindFirstChild("AutoSkip"))
+		settings.ChildAdded:Connect(function(child)
+			if child.Name == "AutoSkip" then
+				bindAutoSkip(child)
+			end
+		end)
+	end
+
+	local settings = player:FindFirstChild("Settings")
+	if settings then
+		bindSettings(settings)
+	end
+
+	player.ChildAdded:Connect(function(child)
+		if child.Name == "Settings" then
+			bindSettings(child)
+		end
+	end)
+end
+
+for _, player in Players:GetPlayers() do
+	bindAutoSkipSetting(player)
+end
+
+Players.PlayerAdded:Connect(bindAutoSkipSetting)
+
+ReplicatedStorage.Functions.VoteForSkip.OnServerInvoke = function(player, source)
+	return module.TryVote(player, source)
 end
 
 script.Parent.Parent.Parent.Skip.Event:Connect(function()
 	if Variables.CurrentRound >= Variables.MaxWave then return end
 	Variables.Skip = true
 	Variables.SkipVoteOpen = false
+	ReplicatedStorage.Events.SkipGui:FireAllClients(false)
 	debugSkip("Skip event applied to the current round")
 end)
 

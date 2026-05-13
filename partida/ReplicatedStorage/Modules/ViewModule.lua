@@ -71,6 +71,112 @@ local function replicate(v)
 	end
 end
 
+local function addSummonHudTarget(targets, seen, target)
+	if not target or seen[target] then
+		return
+	end
+
+	if target:IsA("GuiObject") or target:IsA("ScreenGui") then
+		seen[target] = true
+		targets[#targets + 1] = target
+		return
+	end
+
+	for _, descendant in target:GetDescendants() do
+		if descendant:IsA("GuiObject") or descendant:IsA("ScreenGui") then
+			addSummonHudTarget(targets, seen, descendant)
+		end
+	end
+end
+
+local function addNamedSummonHudTargets(targets, seen, parent, name)
+	if not parent then
+		return
+	end
+
+	for _, descendant in parent:GetDescendants() do
+		if descendant.Name == name then
+			addSummonHudTarget(targets, seen, descendant)
+		end
+	end
+end
+
+local function getSummonHudTargets()
+	local localPlayer = game.Players.LocalPlayer
+	local playerGui = localPlayer and (localPlayer:FindFirstChild("PlayerGui") or localPlayer:WaitForChild("PlayerGui", 2))
+	local targets = {}
+	local seen = {}
+	if not playerGui then
+		return targets
+	end
+
+	local newUI = playerGui:FindFirstChild("NewUI")
+	if newUI then
+		addSummonHudTarget(targets, seen, newUI)
+		addNamedSummonHudTargets(targets, seen, newUI, "IngameHud")
+		addNamedSummonHudTargets(targets, seen, newUI, "ingameHud")
+		addNamedSummonHudTargets(targets, seen, newUI, "Top")
+		addNamedSummonHudTargets(targets, seen, newUI, "Bottom")
+		addNamedSummonHudTargets(targets, seen, newUI, "Slot")
+		addNamedSummonHudTargets(targets, seen, newUI, "Slots")
+		addNamedSummonHudTargets(targets, seen, newUI, "LevelBar")
+		addNamedSummonHudTargets(targets, seen, newUI, "AmountMoney")
+	end
+
+	local gameGui = playerGui:FindFirstChild("GameGui") or playerGui:WaitForChild("GameGui", 2)
+	if gameGui then
+		addSummonHudTarget(targets, seen, gameGui)
+		addNamedSummonHudTargets(targets, seen, gameGui, "Slots")
+		addNamedSummonHudTargets(targets, seen, gameGui, "Level")
+		addNamedSummonHudTargets(targets, seen, gameGui, "Currency")
+		addNamedSummonHudTargets(targets, seen, gameGui, "Currecny")
+	end
+
+	addSummonHudTarget(targets, seen, playerGui:FindFirstChild("Ingame_HUD"))
+	addSummonHudTarget(targets, seen, playerGui:FindFirstChild("StatsHUD"))
+
+	return targets
+end
+
+local function hideIngameHudForSummon(isFromSummon)
+	if not isFromSummon then
+		return nil
+	end
+
+	local states = {}
+	for _, hud in getSummonHudTargets() do
+		if hud:IsA("GuiObject") then
+			states[#states + 1] = {
+				instance = hud,
+				wasVisible = hud.Visible,
+			}
+			hud.Visible = false
+		elseif hud:IsA("ScreenGui") then
+			states[#states + 1] = {
+				instance = hud,
+				wasEnabled = hud.Enabled,
+			}
+			hud.Enabled = false
+		end
+	end
+
+	if #states <= 0 then
+		return nil
+	end
+
+	return function()
+		for _, state in states do
+			if state.instance.Parent then
+				if state.wasVisible ~= nil then
+					state.instance.Visible = state.wasVisible
+				elseif state.wasEnabled ~= nil then
+					state.instance.Enabled = state.wasEnabled
+				end
+			end
+		end
+	end
+end
+
 function ViewModule.EvolveHatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 
 	local UnitInfo = Info[1]
@@ -86,6 +192,7 @@ function ViewModule.EvolveHatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 	local UnitsTakedowns = PlayerUnit:GetAttribute("Takedowns")
 	local HatchShiny = HatchUi:WaitForChild("Shiny")
 	HatchUi.Parent = 	game.Players.LocalPlayer.PlayerGui
+	local restoreIngameHud = hideIngameHudForSummon(isFromSummon)
 
 	UiHandler.DisableAllButtons()
 
@@ -566,6 +673,9 @@ function ViewModule.EvolveHatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 				Object:Destroy();
 			end;
 
+			if restoreIngameHud then
+				restoreIngameHud()
+			end
 			if not isFromSummon then
 				task.spawn(UiHandler.EnableAllButtons)
 				--ENALBE THE UI HERE--Knit.Get("Module", "GuiUtil"):RenableAllWindows()
@@ -593,6 +703,7 @@ function ViewModule.Hatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 	local UnitsTakedowns = PlayerUnit:GetAttribute("Takedowns")
 	local HatchShiny = HatchUi:WaitForChild("Shiny")
 	HatchUi.Parent = 	game.Players.LocalPlayer.PlayerGui
+	local restoreIngameHud = hideIngameHudForSummon(isFromSummon)
 
 	-- CLOSE ALL OF THE UI HERE --Knit.Get("Module", "GuiUtil"):CloseAllWindows(" ", true)
 	
@@ -1292,6 +1403,9 @@ function ViewModule.Hatch(Info) --UnitInfo, PlayerUnit, _resumeCallback
 					Object:Destroy();
 				end;
 
+				if restoreIngameHud then
+					restoreIngameHud()
+				end
 				if not isFromSummon then
 					task.spawn(UiHandler.EnableAllButtons)
 					--ENALBE THE UI HERE--Knit.Get("Module", "GuiUtil"):RenableAllWindows()
@@ -1496,6 +1610,7 @@ function ViewModule.Item(Info)
 	local HatchCenter = HatchUi:WaitForChild("Center")
 	local HatchBottom = HatchUi:WaitForChild("Bottom")
 	HatchUi.Parent = 	game.Players.LocalPlayer.PlayerGui
+	local restoreIngameHud = hideIngameHudForSummon(isFromSummon)
 
 	-- CLOSE ALL OF THE UI HERE --Knit.Get("Module", "GuiUtil"):CloseAllWindows(" ", true)
 	--UiHandler.DisableAllButtons()
@@ -1927,6 +2042,9 @@ function ViewModule.Item(Info)
 				Object:Destroy();
 			end;
 
+			if restoreIngameHud then
+				restoreIngameHud()
+			end
 			if not isFromSummon then
 				task.spawn(UiHandler.EnableAllButtons)
 				--ENALBE THE UI HERE--Knit.Get("Module", "GuiUtil"):RenableAllWindows()

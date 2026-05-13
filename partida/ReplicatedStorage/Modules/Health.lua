@@ -5,35 +5,29 @@ local health = {}
 function health.Setup(model, screenGui)
 	local newHealthBar = script.HealthGui:Clone()
 	local HRP = model:WaitForChild('HumanoidRootPart', 3)
-
-	if not HRP or not model.Parent then
-		newHealthBar:Destroy()
+	
+    if not HRP or not model.Parent then
+        newHealthBar:Destroy()
 		model:Destroy()
 		return
 	end
-
-	newHealthBar:GetPropertyChangedSignal('Adornee'):Connect(function()
-		if not newHealthBar.Adornee then
-			newHealthBar:Destroy()
-		end
-	end)
-
-	newHealthBar.Adornee = HRP
-
+    
+    newHealthBar:GetPropertyChangedSignal('Adornee'):Connect(function()
+        if not newHealthBar.Adornee then
+            newHealthBar:Destroy()
+        end
+    end)
+    
+    newHealthBar.Adornee = HRP
+    
+    
+    
 	newHealthBar.Parent = Players.LocalPlayer.PlayerGui:WaitForChild("Billboards")
-
-	local function syncHiddenState()
-		if not newHealthBar.Parent then
-			return
-		end
-
-		newHealthBar.Enabled = not model:GetAttribute("MobHidden")
-	end
-
+	
 	if workspace:WaitForChild('Info').World.Value == 5 then -- tatooine
 		newHealthBar.StudsOffsetWorldSpace = Vector3.new(0, 3.4, 0)
 	end
-
+	
 	if model.Name == "Base" then
 		newHealthBar.MaxDistance = 100
 		newHealthBar.Size = UDim2.new(0, 200, 0, 20)
@@ -49,25 +43,13 @@ function health.Setup(model, screenGui)
 		health.UpdateScreenGuiHealth(screenGui, model)
 	end
 
-	local function updateHealthDisplays()
+	model.Humanoid.HealthChanged:Connect(function()
 		health.UpdateBarHealth(newHealthBar, model)
 		if screenGui then
 			health.UpdateScreenGuiHealth(screenGui, model)
 		end
-	end
-
-	model.Humanoid.HealthChanged:Connect(function()
-		updateHealthDisplays()
+		--end
 	end)
-	model.Humanoid:GetPropertyChangedSignal("MaxHealth"):Connect(updateHealthDisplays)
-	model:GetAttributeChangedSignal("MobHidden"):Connect(syncHiddenState)
-	model.Destroying:Connect(function()
-		if newHealthBar.Parent then
-			newHealthBar:Destroy()
-		end
-	end)
-
-	syncHiddenState()
 end
 
 -- FUNCTIONS

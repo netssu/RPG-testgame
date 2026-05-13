@@ -1,11 +1,11 @@
 -- SERVICES
 local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local GuiService = game:GetService("GuiService")
 local UserInputService = game:GetService("UserInputService")
 
 -- CONSTANTS
-local SKIP_CENTER_POSITION = UDim2.fromScale(0.5, 0.5)
 
 -- VARIABLES
 local player = Players.LocalPlayer
@@ -13,20 +13,24 @@ local playerGui = player:WaitForChild("PlayerGui")
 
 -- Referenciando a nova UI que configuramos anteriormente
 local SkipUI = playerGui:WaitForChild("NewUI"):WaitForChild("Skip")
-SkipUI.AnchorPoint = Vector2.new(0.5, 0.5)
-SkipUI.Position = SKIP_CENTER_POSITION
 
 local UIHandler = require(ReplicatedStorage.Modules.Client.UIHandler)
 
 -- FUNCTIONS
-local function setInteractionContext(context)
-	SkipUI:SetAttribute("InteractionContext", context)
+local function hasAutoSkipEnabled()
+	local settings = player:FindFirstChild("Settings")
+	local autoSkip = settings and settings:FindFirstChild("AutoSkip")
+	return autoSkip and autoSkip.Value == true
 end
 
 -- INIT
-repeat task.wait() until player:FindFirstChild("DataLoaded")
+repeat task.wait() until player:FindFirstChild('DataLoaded')
 
-ReplicatedStorage.Events.SkipGui.OnClientEvent:Connect(function(visible, SecondArgument: {})
+ReplicatedStorage.Events.SkipGui.OnClientEvent:Connect(function(visible, SecondArgument : {})
+	if hasAutoSkipEnabled() and visible ~= false then
+		SkipUI.Visible = false
+		return
+	end
 
 	if SecondArgument then
 		if SecondArgument.Yes then
@@ -47,19 +51,17 @@ ReplicatedStorage.Events.SkipGui.OnClientEvent:Connect(function(visible, SecondA
 		end
 	end
 
-	if visible == true then
-		setInteractionContext("WaveSkip")
-		SkipUI.Position = SKIP_CENTER_POSITION
-	elseif visible == false then
-		setInteractionContext(nil)
-	end
-
 	SkipUI.Visible = visible
 
-	if visible == true and UserInputService.GamepadEnabled then
-		local btnToSelect = SkipUI:IsA("GuiButton") and SkipUI or SkipUI:FindFirstChildWhichIsA("GuiButton", true)
-		if btnToSelect then
-			GuiService.SelectedObject = btnToSelect
+	if visible == true then
+		-- A animação agora ocorre na nova UI
+		TweenService:Create(SkipUI, TweenInfo.new(0.5, Enum.EasingStyle.Back), {Position = UDim2.new(0.786, 0, 0.34, 0)}):Play()
+
+		if UserInputService.GamepadEnabled then
+			local btnToSelect = SkipUI:IsA("GuiButton") and SkipUI or SkipUI:FindFirstChildWhichIsA("GuiButton", true)
+			if btnToSelect then
+				GuiService.SelectedObject = btnToSelect
+			end
 		end
 	end
 

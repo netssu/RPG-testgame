@@ -15,11 +15,7 @@ script.Parent.Selectable = true
 script.Parent.Active = true
 
 script.Parent.Activated:Connect(function()
-	if script.Parent.Parent.Visible ~= true then
-		return
-	end
-
-	local result = ReplicatedStorage.Functions.VoteForSkip:InvokeServer("LegacySkipButton")
+	local result = ReplicatedStorage.Functions.VoteForSkip:InvokeServer()
 
 	if result == true then
 		TweenService:Create(script.Parent.Parent, TweenInfo.new(0.5, Enum.EasingStyle.Back), {Position = UDim2.new(1.2, 0, 0.34, 0)}):Play()
